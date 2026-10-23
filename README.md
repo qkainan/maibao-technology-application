@@ -72,7 +72,7 @@ mvn spring-boot:run
 docker run -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 ```
 
-没有 broker 时把它改成 `false`，`TaskDispatcher` 会自动降级为同步执行（`InlineTaskDispatcher`），接口行为不变。
+没有 broker 时把它改成 `false`，`TaskDispatcher` 会自动降级为同步执行（`InlineTaskDispatcher`），接口行为不变；`/actuator/health` 也不会因为 broker 不可达而变 DOWN。
 
 ---
 
@@ -98,6 +98,8 @@ src/main/java/com/maibao/tech/
 ```bash
 mvn test
 ```
+
+10 个用例全部通过（2026-10-23）。
 
 覆盖的关键点：
 - `SseFrameParserTest` — 半包 / 粘包 / 多帧切分

@@ -73,7 +73,7 @@
 |---|---|
 | 代码完整性 | 已完成第一版（43 个主源码 + 4 个测试类），覆盖上表全部技术点；2026-10-23 把 REST 入口统一收进 `controller/` |
 | **编译 + 启动验证** | ✅ 已完成（2026-10-23）：JDK 17 编译通过（43 主源码 + 4 测试类），应用启动成功，`/actuator/health` = UP |
-| 单元测试 | 4 个测试类（帧解析 / 循环节点 / 增量归一 / 加解密）；❌ **本机尚未执行成功** —— surefire 的 JUnit provider 不在本地仓库，命令行 Maven 的 localRepository 里也没有 Spring Boot 3.2.5。在 `mvn test` 真正跑通之前，文档里不标注"已测试" |
+| 单元测试 | ✅ 4 个测试类、10 个用例全部通过（2026-10-23，`mvn test`：Tests run 10, Failures 0, Errors 0） |
 | 前端 | 单页功能测试台 `static/index.html`：按 Tab 覆盖全部接口，含并发 PASS/FAIL 判定、SSE 帧计数与已知缺口提示；无构建、无外部依赖 |
 | RabbitMQ | ✅ 已接通本地 broker：队列 `maibao.task.queue` publish=3 / deliver=3 / consumers=1，交换机 `maibao.task.exchange`(direct) 自动声明成功 |
 | 生产化 | 不做。单机运行，不涉及集群与多租户 |
@@ -93,6 +93,10 @@
 | 异步投递 + 消费 | `POST /api/task/submit` | 返回 `async via mq`；队列 publish=3 / deliver=3 / consumers=1 |
 | 健康检查 | `GET /actuator/health` | `{"status":"UP"}` |
 | 接口冒烟（2026-10-23 复核） | `/api/chat`、`/api/workflow/run`、`/api/workflow/validate`、`/api/task/submit`、`/api/keys` | 全部 `code=0`；`/api/workflow/run` 返回 `round_executed=3` |
+| 单元测试 | `mvn test` | Tests run: 10, Failures: 0, Errors: 0 |
+| 接口全量回归（2026-10-23） | 24 项端到端用例 | 24/24 通过（对话 / SSE / 工作流 / 任务 / 发布 / 密钥 / 健康） |
+| 无 broker 运行 | `app.mq.enabled=false` + broker 端口不可达 | 应用正常启动，`/actuator/health` = UP，任务走 inline |
+| 消费幂等 | 同一 taskId 投递两次 | 投递 2 次、消费 1 次，第二次日志 `duplicate message, ack and skip` |
 
 **未验证**：单元测试（`mvn test`）尚未在本机跑通。
 
@@ -128,7 +132,7 @@
 
 ## 8. 后续计划
 
-1. **让 `mvn test` 真正跑起来**（编译已通过）：补上 surefire 的 JUnit provider，或修正 Maven 的 `localRepository` —— 这是当前唯一的硬阻塞
+1. ✅ 已完成（2026-10-23）：`mvn test` 跑通，10 个用例通过。接下来是补集成测试（第 3 条）
 2. 把 `SseFrameParser` / `ChunkNormalizer` 接进 `/api/chat/stream`，让流式链路真正跑在请求链路上（见 5.1 节缺口 2）
 3. 补一个 `@SpringBootTest` 覆盖"发布状态机 + 并发抢占"的集成测试（现在只有单元测试）
 4. RabbitMQ 失败路径：生产端 confirm、消费重试、死信队列、积压处理
