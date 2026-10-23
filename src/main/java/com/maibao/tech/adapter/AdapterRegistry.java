@@ -24,7 +24,7 @@ public class AdapterRegistry {
         this.fallback = adapters.get("mock");
     }
 
-    /** model 形如 "openai:gpt-4o-mini" / "mock:demo"，前缀决定走哪个适配器 */
+    /** model 形如 "openai:gpt-4o-mini" / "mock:echo"，前缀决定走哪个适配器 */
     public AiProviderAdapter resolve(String model) {
         String prefix = model == null ? "" : model.split(":", 2)[0];
         return adapters.getOrDefault(prefix, fallback);

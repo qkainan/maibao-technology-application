@@ -40,29 +40,29 @@ mvn spring-boot:run
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/chat?prompt=...&model=mock:demo` | 同步对话 |
+| POST | `/api/chat?prompt=...&model=mock:echo` | 同步对话 |
 | GET | `/api/chat/stream?prompt=...` | **SSE 流式**（浏览器直接打开看） |
-| POST | `/api/workflow/demo` | 跑一个「LLM 节点 + 循环 3 轮」的工作流 |
+| POST | `/api/workflow/run` | 跑一个「LLM 节点 + 循环 3 轮」的工作流 |
 | POST | `/api/workflow/validate` | 图校验：传邻接表，返回环上的边 |
 | POST | `/api/task/submit?payload=...` | 提交异步任务（MQ 开启走队列，关闭时同步执行） |
 | POST | `/api/publish?nodeId=n1&delaySeconds=10` | 建定时发布记录 |
-| POST | `/api/publish/{id}/race?threads=20` | **并发演示**：20 线程抢一条，应返回 1 |
+| POST | `/api/publish/{id}/race?threads=20` | **并发验证**：20 线程抢一条，应返回 1 |
 | POST | `/api/keys?...` | 写入密钥（密文入库，返回脱敏串） |
-| GET | `/api/keys/{id}?ownerId=other` | **越权演示**：返回 4030 |
+| GET | `/api/keys/{id}?ownerId=other` | **越权校验**：返回 4030 |
 
 ### 数据库（默认 H2，零安装）
 
 默认用 **H2 文件库**：`jdbc:h2:file:./data/maibao`，启动时按实体自动建表，`data/` 目录自动生成。
 控制台：<http://localhost:8080/h2-console>（JDBC URL 填 `jdbc:h2:file:./data/maibao;AUTO_SERVER=TRUE`，用户 `sa`，密码空）
 
-想用 MySQL 演示 `EXPLAIN` 与索引效果时：
+想验证 MySQL 的执行计划与索引效果时：
 
 1. 建库：`CREATE DATABASE maibao DEFAULT CHARSET utf8mb4;`
 2. 打开 `pom.xml` 里 `mysql-connector-j` 那段注释
 3. 启动加参数：`mvn spring-boot:run -Dspring-boot.run.profiles=mysql`
 
 `publish_record` 上已声明联合索引 `idx_status_scheduled_at (status, scheduled_at)`，
-对应"按 status + scheduled_at 扫到期任务"的查询，可以拿它当场演示 `EXPLAIN`。
+对应"按 status + scheduled_at 扫到期任务"的查询，可以拿它验证执行计划。
 
 ### RabbitMQ（默认开启）
 
@@ -85,7 +85,7 @@ src/main/java/com/maibao/tech/
 ├── chat/         对话服务 + SSE（含帧解析、增量归一）
 ├── workflow/     节点模型、循环节点、图校验
 ├── mq/           RabbitMQ 生产/消费、消费幂等
-├── publish/      发布状态机、乐观锁抢占、并发演示
+├── publish/      发布状态机、乐观锁抢占、并发验证
 ├── security/     AES-GCM 加密、密钥归属校验
 ├── config/       线程池等基础配置
 └── common/       统一响应、异常处理
@@ -109,6 +109,6 @@ mvn test
 
 ## 说明
 
-- 这是一个**技术验证型项目**，业务是"调 API Key 做 AI 对话"，目的是展示机制而不是功能完整度。
+- 这是一个**技术验证型项目**，业务是"调 API Key 做 AI 对话"，重点在机制而不是功能完整度。
 - 发布、灰度、调度在真实系统里通常由独立服务承担，这里只保留**业务对象的状态与并发控制**这一层。
 - 没有 API Key 也能跑：`MockAdapter` 会兜底生成回复。

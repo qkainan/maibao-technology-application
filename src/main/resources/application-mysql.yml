@@ -1,4 +1,4 @@
-# 可选：想用 MySQL 演示 EXPLAIN / 索引时启用
+# 可选：切到 MySQL 验证执行计划与索引效果时启用
 #   mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 # 前提：
 #   1) 本地有 MySQL，并建库：CREATE DATABASE maibao DEFAULT CHARSET utf8mb4;

@@ -14,8 +14,8 @@ import com.maibao.tech.security.KeyVaultService;
 /**
  * OpenAI 兼容协议的适配器实现：把内部 ChatRequest 翻译成 /chat/completions 的 body。
  *
- * <p>说明：真实项目里 stream 是逐 token 转发；这里为了 demo 简化成"整段拿到后再切块推送"，
- * 协议解析部分由 {@link com.maibao.tech.chat.stream.SseFrameParser} 单独演示并单测。</p>
+ * <p>说明：当前 stream 实现先取回整段响应，再切块推给下游。逐 token 转发与帧解析由
+ * {@link com.maibao.tech.chat.stream.SseFrameParser} 承担，目前独立实现并单测覆盖。</p>
  */
 @Component
 public class OpenAiCompatibleAdapter implements AiProviderAdapter {

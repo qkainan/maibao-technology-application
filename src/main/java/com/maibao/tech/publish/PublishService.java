@@ -66,11 +66,11 @@ public class PublishService {
     }
 
     /**
-     * 并发演示：N 个线程同时抢同一条记录，正确结果是有且只有 1 个成功。
+     * 并发验证：N 个线程同时抢同一条记录，正确结果是有且只有 1 个成功。
      * 用它来验证乐观锁真的挡住了并发。
      */
     public int race(Long id, int threads) {
-        // 先复位成 SCHEDULED，保证同一条记录可以反复演示
+        // 先复位成 SCHEDULED，保证同一条记录可以反复验证
         repository.forceStatus(id, PublishStatus.SCHEDULED);
         publishLog(id);
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -102,7 +102,7 @@ public class PublishService {
     }
 
     private void publishLog(Long id) {
-        log.info("race demo on publish {}, current status = {}", id, get(id).getStatus());
+        log.info("race start on publish {}, current status = {}", id, get(id).getStatus());
     }
 
     private String truncate(String s) {

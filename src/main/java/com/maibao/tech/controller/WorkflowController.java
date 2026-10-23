@@ -33,13 +33,13 @@ public class WorkflowController {
     }
 
     /** 跑一个最小工作流：LLM 节点 + 循环 3 轮后停止 */
-    @PostMapping("/demo")
-    public ApiResponse<Map<String, Object>> demo(@RequestBody(required = false) Map<String, String> body) {
+    @PostMapping("/run")
+    public ApiResponse<Map<String, Object>> run(@RequestBody(required = false) Map<String, String> body) {
         String prompt = body == null ? "介绍一下你自己" : body.getOrDefault("prompt", "介绍一下你自己");
         NodeContext ctx = new NodeContext();
         ctx.set("input", prompt);
 
-        Node llm = new LlmNode("llm-1", "mock:demo", "input", "output", chatService);
+        Node llm = new LlmNode("llm-1", "mock:echo", "input", "output", chatService);
         // 循环体：每轮调用一次 llm；当轮次变量 >= 3 时结束
         LoopNode loop = new LoopNode("loop-1", "round", 100, c -> c.getInt("round", 0) >= 3, List.of(llm));
 

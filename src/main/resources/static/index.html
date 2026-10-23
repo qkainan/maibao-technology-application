@@ -163,9 +163,9 @@
   <section class="panel active" data-panel="chat">
     <div class="card">
       <h2>同步对话</h2>
-      <p class="hint"><span class="verb post">POST</span><code>/api/chat</code> — 由 <code>AdapterRegistry</code> 按 model 前缀选适配器。<code>mock:demo</code> 不需要 API Key。</p>
+      <p class="hint"><span class="verb post">POST</span><code>/api/chat</code> — 由 <code>AdapterRegistry</code> 按 model 前缀选适配器。<code>mock:echo</code> 不需要 API Key。</p>
       <div class="row">
-        <label>model<input id="chat-model" value="mock:demo"></label>
+        <label>model<input id="chat-model" value="mock:echo"></label>
         <label>appKeyRef（可空）<input id="chat-key" placeholder="密钥 Tab 里创建的 id"></label>
       </div>
       <div class="row">
@@ -185,7 +185,7 @@
       <h2>SSE 流式对话</h2>
       <p class="hint"><span class="verb get">GET</span><code>/api/chat/stream</code> — 事件名区分 <code>text</code> / <code>reasoning</code> / <code>done</code>，服务端用独立线程池推送。</p>
       <div class="row">
-        <label>model<input id="sse-model" value="mock:demo"></label>
+        <label>model<input id="sse-model" value="mock:echo"></label>
         <label>appKeyRef（可空）<input id="sse-key" placeholder="密钥 Tab 里创建的 id"></label>
       </div>
       <div class="row">
@@ -208,14 +208,14 @@
   <section class="panel" data-panel="workflow">
     <div class="card">
       <h2>跑一个最小工作流</h2>
-      <p class="hint"><span class="verb post">POST</span><code>/api/workflow/demo</code> — LLM 节点 + 循环 3 轮。返回上下文快照，<code>round_executed</code> 应为 3。</p>
+      <p class="hint"><span class="verb post">POST</span><code>/api/workflow/run</code> — LLM 节点 + 循环 3 轮。返回上下文快照，<code>round_executed</code> 应为 3。</p>
       <div class="row">
         <label class="grow">prompt<textarea id="wf-prompt" rows="2">hi</textarea></label>
       </div>
       <div class="actions">
-        <button class="btn primary" id="wf-demo-run">执行</button>
+        <button class="btn primary" id="wf-run">执行</button>
       </div>
-      <pre class="out" id="wf-demo-out"></pre>
+      <pre class="out" id="wf-out"></pre>
     </div>
 
     <div class="card">
@@ -539,11 +539,11 @@
   $('sse-stop').addEventListener('click', function () { sseFinish('手动断开'); });
 
   /* ---------- 工作流 ---------- */
-  $('wf-demo-run').addEventListener('click', function () {
-    run('wf-demo-out', async function () {
-      const res = await request('POST', '/api/workflow/demo', { json: { prompt: $('wf-prompt').value } });
+  $('wf-run').addEventListener('click', function () {
+    run('wf-out', async function () {
+      const res = await request('POST', '/api/workflow/run', { json: { prompt: $('wf-prompt').value } });
       const exec = res.body && res.body.data ? res.body.data.round_executed : undefined;
-      paint('wf-demo-out', res, 'round_executed=' + exec + (exec === 3 ? '（符合预期）' : ''));
+      paint('wf-out', res, 'round_executed=' + exec + (exec === 3 ? '（符合预期）' : ''));
     });
   });
 

@@ -36,7 +36,7 @@ public class ApiKeyController {
         return ApiResponse.ok(keyVaultService.list(ownerId));
     }
 
-    /** 越权演示：ownerId 不匹配时返回 4030 */
+    /** 越权校验：ownerId 不匹配时返回 4030 */
     @GetMapping("/{id}")
     public ApiResponse<Map<String, Object>> detail(@PathVariable Long id, @RequestParam String ownerId) {
         return ApiResponse.ok(keyVaultService.detail(ownerId, id));

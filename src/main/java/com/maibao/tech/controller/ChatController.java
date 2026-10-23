@@ -29,7 +29,7 @@ public class ChatController {
     }
 
     @PostMapping
-    public ApiResponse<String> chat(@RequestParam(defaultValue = "mock:demo") String model,
+    public ApiResponse<String> chat(@RequestParam(defaultValue = "mock:echo") String model,
                                     @RequestParam(defaultValue = "") String appKeyRef,
                                     @RequestParam String prompt) {
         return ApiResponse.ok(chatService.chat(appKeyRef, model, prompt));
@@ -37,7 +37,7 @@ public class ChatController {
 
     /** SSE 流式：服务端把统一后的增量逐帧推出，事件名区分 text / reasoning / done */
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@RequestParam(defaultValue = "mock:demo") String model,
+    public SseEmitter stream(@RequestParam(defaultValue = "mock:echo") String model,
                              @RequestParam(defaultValue = "") String appKeyRef,
                              @RequestParam String prompt) {
         SseEmitter emitter = new SseEmitter(0L);

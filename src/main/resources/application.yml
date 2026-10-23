@@ -41,8 +41,8 @@ app:
     queue: maibao.task.queue
     routing-key: maibao.task
   security:
-    # 演示用固定密钥；生产应放 KMS / 环境变量
-    secret: "maibao-demo-secret-0123456789abcdef"
+    # 本地固定密钥；部署时应放 KMS / 环境变量
+    secret: "maibao-app-secret-0123456789abcdef"
   provider:
     openai:
       base-url: https://api.openai.com/v1

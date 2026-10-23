@@ -63,7 +63,7 @@
 | 多租户、审计、权限体系 | 只做密钥归属校验 |
 | 成本、QPS、限流策略 | 不涉及，不编写相关模块 |
 
-写 README、注释、commit message 时按"技术演示"措辞，不用"生产级""高可用"这类词。
+写 README、注释、commit message 时保持客观描述，不用"生产级""高可用"这类词。
 
 ---
 
@@ -76,7 +76,7 @@
 | 单元测试 | 4 个测试类（帧解析 / 循环节点 / 增量归一 / 加解密）；❌ **本机尚未执行成功** —— surefire 的 JUnit provider 不在本地仓库，命令行 Maven 的 localRepository 里也没有 Spring Boot 3.2.5。在 `mvn test` 真正跑通之前，文档里不标注"已测试" |
 | 前端 | 单页功能测试台 `static/index.html`：按 Tab 覆盖全部接口，含并发 PASS/FAIL 判定、SSE 帧计数与已知缺口提示；无构建、无外部依赖 |
 | RabbitMQ | ✅ 已接通本地 broker：队列 `maibao.task.queue` publish=3 / deliver=3 / consumers=1，交换机 `maibao.task.exchange`(direct) 自动声明成功 |
-| 生产化 | 不做。这是单机演示项目 |
+| 生产化 | 不做。单机运行，不涉及集群与多租户 |
 
 ---
 
@@ -92,7 +92,7 @@
 | 队列/交换机声明 | 管理台 API | `maibao.task.queue`、`maibao.task.exchange`(direct) 均存在 |
 | 异步投递 + 消费 | `POST /api/task/submit` | 返回 `async via mq`；队列 publish=3 / deliver=3 / consumers=1 |
 | 健康检查 | `GET /actuator/health` | `{"status":"UP"}` |
-| 接口冒烟（2026-10-23 复核） | `/api/chat`、`/api/workflow/demo`、`/api/workflow/validate`、`/api/task/submit`、`/api/keys` | 全部 `code=0`；demo 的 `round_executed=3` |
+| 接口冒烟（2026-10-23 复核） | `/api/chat`、`/api/workflow/run`、`/api/workflow/validate`、`/api/task/submit`、`/api/keys` | 全部 `code=0`；`/api/workflow/run` 返回 `round_executed=3` |
 
 **未验证**：单元测试（`mvn test`）尚未在本机跑通。
 
@@ -118,10 +118,10 @@
 
 ## 7. 不要做的事
 
-- ❌ 不要为了让 demo 好看而编造数据（假 QPS、假用户量、假耗时）
+- ❌ 不要为了让页面好看而编造数据（假 QPS、假用户量、假耗时）
 - ❌ 不要为了"看起来完整"引入 Redis / Nacos / K8s —— 多一个没被真正用起来的组件，就多一块解释不清的面积
 - ❌ 不要复制任何真实业务系统的内部接口、字段名或业务规则
-- ❌ 不要在文档里写"生产级"、"高可用" —— 这是单机演示
+- ❌ 不要在文档里写"生产级"、"高可用" —— 这是单机运行
 - ❌ 不要删掉第 4 节的范围边界表，它是这个项目对外的承诺
 
 ---
@@ -129,7 +129,7 @@
 ## 8. 后续计划
 
 1. **让 `mvn test` 真正跑起来**（编译已通过）：补上 surefire 的 JUnit provider，或修正 Maven 的 `localRepository` —— 这是当前唯一的硬阻塞
-2. 把 `SseFrameParser` / `ChunkNormalizer` 接进 `/api/chat/stream`，让流式链路可以被真实演示（见 5.1 节缺口 2）
+2. 把 `SseFrameParser` / `ChunkNormalizer` 接进 `/api/chat/stream`，让流式链路真正跑在请求链路上（见 5.1 节缺口 2）
 3. 补一个 `@SpringBootTest` 覆盖"发布状态机 + 并发抢占"的集成测试（现在只有单元测试）
 4. RabbitMQ 失败路径：生产端 confirm、消费重试、死信队列、积压处理
 5. 循环节点的**取消**能力（`CancellationToken` 或状态位 + 轮前检查）

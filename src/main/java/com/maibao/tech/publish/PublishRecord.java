@@ -15,7 +15,7 @@ import jakarta.persistence.Table;
 /**
  * 发布记录：一张表承载立即 / 定时 / 灰度三种发布方式。
  *
- * <p>字段按四类拆分：生命周期 status、可调用性（本 demo 省略）、来源标记 isScheduled、进度 grayPercent。</p>
+ * <p>字段按四类拆分：生命周期 status、可调用性（未实现）、来源标记 isScheduled、进度 grayPercent。</p>
  */
 @Entity
 @Table(name = "publish_record",

@@ -6,10 +6,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * MQ 关闭时的兜底实现：同步执行。
+ * MQ 关闭时的降级实现：在调用线程同步执行。
  *
- * <p>这样项目不装 RabbitMQ 也能启动、也能演示接口，
- * 打开 app.mq.enabled=true 后自动切成 RabbitMQ 实现。</p>
+ * <p>与异步链路共用同一套幂等约束（processed_task），区别只在于省掉投递与确认环节；
+ * app.mq.enabled=true 时由 RabbitTaskDispatcher 接管。</p>
  */
 @Component
 @ConditionalOnProperty(prefix = "app.mq", name = "enabled", havingValue = "false", matchIfMissing = true)

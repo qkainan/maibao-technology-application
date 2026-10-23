@@ -4,7 +4,7 @@ import java.util.function.Consumer;
 
 import org.springframework.stereotype.Component;
 
-/** 无 key 时的兜底适配器：让项目开箱可跑，也用于压测和单测。 */
+/** 无 key 时的兜底适配器，同时用于单测。 */
 @Component
 public class MockAdapter implements AiProviderAdapter {
 

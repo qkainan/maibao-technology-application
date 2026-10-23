@@ -62,7 +62,7 @@ public class AesGcmCipher {
         }
     }
 
-    /** 脱敏展示：sk-abcd****wxyz */
+    /** 脱敏规则：保留前 4 位与后 4 位，中间打码 */
     public static String mask(String plain) {
         if (plain == null || plain.length() <= 8) {
             return "****";

@@ -56,7 +56,7 @@ public class PublishController {
         return ApiResponse.ok("done");
     }
 
-    /** 并发演示：返回成功抢占的线程数，正确值是 1 */
+    /** 并发验证：返回成功抢占的线程数，正确值是 1 */
     @PostMapping("/{id}/race")
     public ApiResponse<Integer> race(@PathVariable Long id,
                                      @RequestParam(defaultValue = "20") int threads) {

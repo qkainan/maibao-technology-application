@@ -32,7 +32,7 @@ public interface PublishRepository extends JpaRepository<PublishRecord, Long> {
                             @Param("to") PublishStatus to,
                             @Param("reason") String reason);
 
-    /** 仅供演示复位：把记录强制拉回 SCHEDULED，便于重复跑并发用例 */
+    /** 仅供并发用例复位：把记录强制拉回 SCHEDULED，便于重复跑 */
     @Modifying
     @Transactional
     @Query("update PublishRecord p set p.status = :to where p.id = :id")
