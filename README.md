@@ -78,6 +78,7 @@ docker run -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 
 ```
 src/main/java/com/maibao/tech/
+├── controller/   REST 入口：参数绑定 + 响应包装，业务规则一律下沉到各模块
 ├── adapter/      适配器模式：多厂商模型统一出入参
 ├── chat/         对话服务 + SSE（含帧解析、增量归一）
 ├── workflow/     节点模型、循环节点、图校验

@@ -1,4 +1,4 @@
-package com.maibao.tech.workflow;
+package com.maibao.tech.controller;
 
 import java.util.List;
 import java.util.Map;
@@ -11,6 +11,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.maibao.tech.chat.ChatService;
 import com.maibao.tech.common.ApiResponse;
+import com.maibao.tech.workflow.GraphValidator;
+import com.maibao.tech.workflow.LlmNode;
+import com.maibao.tech.workflow.LoopNode;
+import com.maibao.tech.workflow.Node;
+import com.maibao.tech.workflow.NodeContext;
+import com.maibao.tech.workflow.WorkflowEngine;
 
 @RestController
 @RequestMapping("/api/workflow")

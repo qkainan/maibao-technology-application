@@ -71,9 +71,9 @@
 
 | 项 | 状态 |
 |---|---|
-| 代码完整性 | 已完成第一版（58 文件），覆盖上表全部技术点 |
-| **编译 + 启动验证** | ✅ 已完成（2026-10-23）：本机编译通过，应用启动成功，`/actuator/health` = UP |
-| 单元测试 | 4 个测试类（帧解析 / 循环节点 / 增量归一 / 加解密），同样未经 CI 验证 |
+| 代码完整性 | 已完成第一版（43 个主源码 + 4 个测试类），覆盖上表全部技术点；2026-10-23 把 REST 入口统一收进 `controller/` |
+| **编译 + 启动验证** | ✅ 已完成（2026-10-23）：JDK 17 编译通过（43 主源码 + 4 测试类），应用启动成功，`/actuator/health` = UP |
+| 单元测试 | 4 个测试类（帧解析 / 循环节点 / 增量归一 / 加解密）；❌ **本机未能执行** —— surefire 的 JUnit provider 不在本地仓库，且命令行 Maven 的 localRepository 里没有 Spring Boot 3.2.5。`mvn test` 真的绿之前，不要对外说"已测试" |
 | 前端 | 只有一个 SSE 演示页 `static/index.html`，不是产品级前端 |
 | RabbitMQ | ✅ 已接通本地 broker 验证：队列 `maibao.task.queue` publish=3 / deliver=3 / consumers=1，交换机 `maibao.task.exchange`(direct) 自动声明成功 |
 | 生产化 | 不做。这是演示项目，不做多租户、审计、限流 |
@@ -92,8 +92,15 @@
 | 队列/交换机声明 | 管理台 API | `maibao.task.queue`、`maibao.task.exchange`(direct) 均存在 |
 | 异步投递 + 消费 | `POST /api/task/submit` | 返回 `async via mq`；队列 publish=3 / deliver=3 / consumers=1 |
 | 健康检查 | `GET /actuator/health` | `{"status":"UP"}` |
+| 接口冒烟（2026-10-23 复核） | `/api/chat`、`/api/workflow/demo`、`/api/workflow/validate`、`/api/task/submit`、`/api/keys` | 全部 `code=0`；demo 的 `round_executed=3` |
 
-**未验证**：单元测试（`mvn test`）、并发抢占接口（`/race`）、SSE 页面、加密接口 —— 尚未在本机跑过，对外不要宣称"已测试"。
+**未验证**：单元测试（`mvn test`）—— 尚未在本机跑过，对外不要宣称"已测试"。
+
+**已知缺口（面试前要么补掉，要么主动交代）**：
+
+1. 发布链路只做了"扫描 + 抢占"，没有执行者：建单后 5 秒被抢占成 `PUBLISHING`，然后永远停在那里（实测）。
+2. SSE 的帧解析（`SseFrameParser`）与增量归一（`ChunkNormalizer`）还没接进 `/api/chat/stream`，目前只有单测在调用 —— 演示页看到的是 MockAdapter 逐字符推流。
+3. `TaskConsumer` 注释里写的"生产端 confirm"并没有真的配置：`application.yml` 没有 `publisher-confirm-type`，也没有 Confirm/Returns 回调。
 
 ## 6. 改代码时的约定
 
@@ -101,7 +108,7 @@
 2. **新增一个厂商适配器**：只加一个 `@Component implements AiProviderAdapter`，**不要改** `AdapterRegistry` 或 `ChatService`。这是本项目的核心设计约束。
 3. **状态迁移一律用条件更新**（`casStatus` 这类），不要写成"先 `findById` 判断状态再 `save`" —— 那是有竞态的错误示范。
 4. **幂等靠唯一约束**，不要写"先查后插"。
-5. 新增跨模块依赖时，优先顺着现有方向：`chat → adapter`、`workflow → chat`、`publish/mq → repository`。**不要**让 `adapter` 反向依赖 `chat`。
+5. 新增跨模块依赖时，优先顺着现有方向：`chat → adapter`、`workflow → chat`、`publish/mq → repository`。**不要**让 `adapter` 反向依赖 `chat`。REST 入口统一放 `controller/`，它只依赖各模块 service，不允许 service 反向依赖 controller；参数绑定与响应包装留在 controller，业务规则下沉到模块内。
 6. 每个技术点都要有对应的**单元测试**，测试名要能当文档读（`should_xxx_when_yyy`）。
 7. 注释只写"为什么"，不写"是什么"。示例：
    - ✅ `// 传输分片不等于事件边界，必须自攒 buffer`
@@ -121,9 +128,9 @@
 
 ## 8. 如果 AI 要接着做，优先级建议
 
-1. **先让它编译通过**（`mvn -U clean verify`），修掉编译/测试错误 —— 这是当前唯一的硬阻塞
+1. **让 `mvn test` 真正跑起来**（编译已通过）：补上 surefire 的 JUnit provider，或修正 Maven 的 `localRepository` —— 这是当前唯一的硬阻塞
 2. 补一个 `@SpringBootTest` 覆盖"发布状态机 + 并发抢占"的集成测试（现在只有单元测试）
-3. RabbitMQ 的失败路径：消费重试、死信队列、积压处理（简历里说的是"可靠性三件套"，现在只覆盖了两个半）
+3. RabbitMQ 的失败路径：消费重试、死信队列、积压处理（简历里说的是"可靠性三件套"，现在只覆盖了持久化 + 手动 ack + 唯一约束幂等；注释里提的生产端 confirm 也还没配）
 4. 循环节点的**取消**能力（`CancellationToken` 或状态位 + 轮前检查）
 5. SSE 的**断线重连与游标恢复**（对应简历"幂等合并与游标恢复"，现在是简化版）
 

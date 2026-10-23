@@ -1,4 +1,4 @@
-package com.maibao.tech.mq;
+package com.maibao.tech.controller;
 
 import java.util.UUID;
 
@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.maibao.tech.common.ApiResponse;
+import com.maibao.tech.mq.TaskDispatcher;
+import com.maibao.tech.mq.TaskMessage;
 
 @RestController
 @RequestMapping("/api/task")

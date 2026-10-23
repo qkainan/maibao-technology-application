@@ -1,4 +1,4 @@
-package com.maibao.tech.publish;
+package com.maibao.tech.controller;
 
 import java.time.Instant;
 import java.util.Map;
@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.maibao.tech.common.ApiResponse;
 import com.maibao.tech.common.BizException;
+import com.maibao.tech.publish.PublishRecord;
+import com.maibao.tech.publish.PublishService;
 
 @RestController
 @RequestMapping("/api/publish")

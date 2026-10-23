@@ -1,4 +1,4 @@
-package com.maibao.tech.security;
+package com.maibao.tech.controller;
 
 import java.util.List;
 import java.util.Map;
@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.maibao.tech.common.ApiResponse;
+import com.maibao.tech.security.KeyVaultService;
 
 @RestController
 @RequestMapping("/api/keys")
