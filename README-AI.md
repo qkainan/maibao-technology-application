@@ -72,13 +72,28 @@
 | 项 | 状态 |
 |---|---|
 | 代码完整性 | 已完成第一版（58 文件），覆盖上表全部技术点 |
-| **编译验证** | ❌ **未完成** —— 生成环境无法访问 Maven 仓库，需在本机执行 `mvn -U clean verify` |
+| **编译 + 启动验证** | ✅ 已完成（2026-10-23）：本机编译通过，应用启动成功，`/actuator/health` = UP |
 | 单元测试 | 4 个测试类（帧解析 / 循环节点 / 增量归一 / 加解密），同样未经 CI 验证 |
 | 前端 | 只有一个 SSE 演示页 `static/index.html`，不是产品级前端 |
-| RabbitMQ | **默认开启**（`app.mq.enabled=true`）；无 broker 时会持续重连并报错，属预期行为；改 `false` 自动降级为同步 |
+| RabbitMQ | ✅ 已接通本地 broker 验证：队列 `maibao.task.queue` publish=3 / deliver=3 / consumers=1，交换机 `maibao.task.exchange`(direct) 自动声明成功 |
 | 生产化 | 不做。这是演示项目，不做多租户、审计、限流 |
 
 ---
+
+## 5.1 已验证清单（可对外宣称）
+
+以下不是"写完了"，而是**实际跑通过**的：
+
+| 能力 | 验证方式 | 结果 |
+|---|---|---|
+| 应用启动 | `mvn spring-boot:run` | Started in 5.5s，Tomcat 8080 |
+| 数据库 | Hibernate DDL 自动建表 | `processed_task` / `publish_record` / `api_key` 建表成功 |
+| RabbitMQ 连接 | 启动日志 | `Created new connection: amqp://guest@127.0.0.1:5672` |
+| 队列/交换机声明 | 管理台 API | `maibao.task.queue`、`maibao.task.exchange`(direct) 均存在 |
+| 异步投递 + 消费 | `POST /api/task/submit` | 返回 `async via mq`；队列 publish=3 / deliver=3 / consumers=1 |
+| 健康检查 | `GET /actuator/health` | `{"status":"UP"}` |
+
+**未验证**：单元测试（`mvn test`）、并发抢占接口（`/race`）、SSE 页面、加密接口 —— 尚未在本机跑过，对外不要宣称"已测试"。
 
 ## 6. 改代码时的约定
 
