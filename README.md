@@ -76,6 +76,21 @@ docker run -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 
 ---
 
+## 日志
+
+应用日志和访问日志都写到项目根目录的 `logs/`（已在 `.gitignore` 中）：
+
+| 文件 | 内容 | 滚动 |
+|---|---|---|
+| `logs/app.log` | 应用日志，`com.maibao.tech` 级别为 DEBUG | 10 MB 一份，保留 7 天 |
+| `logs/access.yyyy-MM-dd.log` | 访问日志：来源 / 时间 / 请求行 / 状态码 / 字节数 / 耗时(ms) | 每天一份 |
+
+两者同时也输出到控制台；访问日志关闭了缓冲，可以直接 `tail -f`。
+
+> 嵌入式 Tomcat 的 `catalina.base` 是随机临时目录，所以访问日志目录用 `${user.dir}/logs` 指定成绝对路径，否则文件会落在系统临时目录里。
+
+---
+
 ## 目录结构
 
 ```

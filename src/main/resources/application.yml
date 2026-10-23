@@ -1,5 +1,19 @@
 server:
   port: 8080
+  tomcat:
+    accesslog:
+      # 请求级日志：谁在什么时候调了哪个接口、状态码、耗时
+      enabled: true
+      # 嵌入式 Tomcat 的 catalina.base 是随机临时目录，必须用绝对路径才不会写丢
+      directory: ${user.dir}/logs
+      prefix: access
+      suffix: .log
+      # %h 来源 %t 时间 "%r" 请求行 %s 状态码 %b 响应字节 %{ms}T 耗时(毫秒)
+      # 注意：%D 在 Tomcat 10 里是微秒，别拿它当毫秒用
+      pattern: '%h %t "%r" %s %b %{ms}Tms'
+      # 关闭缓冲，写完即刷，方便 tail -f
+      buffered: false
+      rotate: true
 
 spring:
   application:
@@ -55,3 +69,10 @@ app:
 logging:
   level:
     com.maibao.tech: DEBUG
+  file:
+    # 控制台照常输出，同时落盘到 logs/app.log
+    name: logs/app.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7
