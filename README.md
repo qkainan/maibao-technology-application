@@ -27,7 +27,7 @@
 ## 快速开始
 
 ```bash
-# 1. 跑起来（不需要 RabbitMQ，默认走 inline 模式）
+# 1. 跑起来（默认走 RabbitMQ；本地没有 broker 就把 app.mq.enabled 改成 false）
 mvn spring-boot:run
 
 # 2. 打开演示页
@@ -42,23 +42,21 @@ mvn spring-boot:run
 | GET | `/api/chat/stream?prompt=...` | **SSE 流式**（浏览器直接打开看） |
 | POST | `/api/workflow/demo` | 跑一个「LLM 节点 + 循环 3 轮」的工作流 |
 | POST | `/api/workflow/validate` | 图校验：传邻接表，返回环上的边 |
-| POST | `/api/task/submit?payload=...` | 提交异步任务（MQ 关闭时同步执行） |
+| POST | `/api/task/submit?payload=...` | 提交异步任务（MQ 开启走队列，关闭时同步执行） |
 | POST | `/api/publish?nodeId=n1&delaySeconds=10` | 建定时发布记录 |
 | POST | `/api/publish/{id}/race?threads=20` | **并发演示**：20 线程抢一条，应返回 1 |
 | POST | `/api/keys?...` | 写入密钥（密文入库，返回脱敏串） |
 | GET | `/api/keys/{id}?ownerId=other` | **越权演示**：返回 4030 |
 
-### 打开 RabbitMQ（可选）
+### RabbitMQ（默认开启）
 
-```yaml
-# application.yml
-app:
-  mq:
-    enabled: true
+`application.yml` 里默认是 `app.mq.enabled: true`。需要本地有 RabbitMQ：
+
+```bash
+docker run -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 ```
 
-需要本地有 RabbitMQ（`docker run -p 5672:5672 rabbitmq:3-management`）。
-不打开时 `TaskDispatcher` 自动降级为同步执行，接口行为不变。
+没有 broker 时把它改成 `false`，`TaskDispatcher` 会自动降级为同步执行（`InlineTaskDispatcher`），接口行为不变。
 
 ---
 

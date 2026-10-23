@@ -34,9 +34,9 @@ management:
         include: health,info,metrics
 
 app:
-  # MQ 默认关闭：没有 RabbitMQ 也能启动，打开后走真实异步链路
+  # 默认走真实异步链路；本机没有 RabbitMQ 时改成 false，会自动降级为同步执行
   mq:
-    enabled: false
+    enabled: true
     exchange: maibao.task.exchange
     queue: maibao.task.queue
     routing-key: maibao.task
