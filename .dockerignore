@@ -1,0 +1,7 @@
+.git
+.gitignore
+.idea
+target
+data
+*.log
+docs

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>maibao · SSE 流式演示</title>
+  <style>
+    body { font-family: -apple-system, "Microsoft YaHei", sans-serif; margin: 40px auto; max-width: 760px; color: #222; }
+    h1 { font-size: 20px; }
+    textarea { width: 100%; height: 70px; font-size: 14px; padding: 8px; }
+    button { padding: 8px 18px; font-size: 14px; cursor: pointer; }
+    #out { margin-top: 16px; padding: 12px; border: 1px solid #ddd; min-height: 120px; white-space: pre-wrap; line-height: 1.6; }
+    #reasoning { color: #888; font-size: 13px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+<h1>SSE 流式演示</h1>
+<p>对应简历：服务端按帧推送，事件名区分 <code>text</code> / <code>reasoning</code> / <code>done</code>。</p>
+<textarea id="prompt">用三句话解释什么是状态机</textarea>
+<p><button onclick="go()">开始流式对话</button></p>
+<div id="reasoning"></div>
+<div id="out"></div>
+
+<script>
+function go() {
+  const out = document.getElementById('out');
+  const reasoning = document.getElementById('reasoning');
+  out.textContent = '';
+  reasoning.textContent = '';
+  const prompt = encodeURIComponent(document.getElementById('prompt').value);
+  const es = new EventSource('/api/chat/stream?model=mock:demo&prompt=' + prompt);
+
+  es.addEventListener('reasoning', e => { reasoning.textContent += e.data; });
+  es.addEventListener('text', e => { out.textContent += e.data; });
+  es.addEventListener('done', () => es.close());
+  es.onerror = () => es.close();
+}
+</script>
+</body>
+</html>

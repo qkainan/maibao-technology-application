@@ -1,0 +1,22 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# 运行期数据（H2 文件库）
+data/
+*.mv.db
+*.trace.db
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.classpath
+.project
+
+# 日志与临时文件
+*.log
+logs/
+.DS_Store

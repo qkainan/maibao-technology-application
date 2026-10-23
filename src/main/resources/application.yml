@@ -1,0 +1,53 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: maibao-technology-application
+  datasource:
+    url: jdbc:h2:file:./data/maibao;AUTO_SERVER=TRUE;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+app:
+  # MQ 默认关闭：没有 RabbitMQ 也能启动，打开后走真实异步链路
+  mq:
+    enabled: false
+    exchange: maibao.task.exchange
+    queue: maibao.task.queue
+    routing-key: maibao.task
+  security:
+    # 演示用固定密钥；生产应放 KMS / 环境变量
+    secret: "maibao-demo-secret-0123456789abcdef"
+  provider:
+    openai:
+      base-url: https://api.openai.com/v1
+      timeout-ms: 60000
+
+logging:
+  level:
+    com.maibao.tech: DEBUG
