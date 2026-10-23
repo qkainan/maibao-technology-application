@@ -32,8 +32,8 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 # 1. 跑起来（默认走 RabbitMQ；本地没有 broker 就把 app.mq.enabled 改成 false）
 mvn spring-boot:run
 
-# 2. 打开演示页
-# http://localhost:8080/index.html
+# 2. 打开功能测试台（按 Tab 覆盖全部接口）
+# http://localhost:8080/
 ```
 
 ### 常用接口

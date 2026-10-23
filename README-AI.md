@@ -74,7 +74,7 @@
 | 代码完整性 | 已完成第一版（43 个主源码 + 4 个测试类），覆盖上表全部技术点；2026-10-23 把 REST 入口统一收进 `controller/` |
 | **编译 + 启动验证** | ✅ 已完成（2026-10-23）：JDK 17 编译通过（43 主源码 + 4 测试类），应用启动成功，`/actuator/health` = UP |
 | 单元测试 | 4 个测试类（帧解析 / 循环节点 / 增量归一 / 加解密）；❌ **本机尚未执行成功** —— surefire 的 JUnit provider 不在本地仓库，命令行 Maven 的 localRepository 里也没有 Spring Boot 3.2.5。在 `mvn test` 真正跑通之前，文档里不标注"已测试" |
-| 前端 | 只有一个 SSE 演示页 `static/index.html`，不是产品级前端 |
+| 前端 | 单页功能测试台 `static/index.html`：按 Tab 覆盖全部接口，含并发 PASS/FAIL 判定、SSE 帧计数与已知缺口提示；无构建、无外部依赖 |
 | RabbitMQ | ✅ 已接通本地 broker：队列 `maibao.task.queue` publish=3 / deliver=3 / consumers=1，交换机 `maibao.task.exchange`(direct) 自动声明成功 |
 | 生产化 | 不做。这是单机演示项目 |
 
@@ -99,7 +99,7 @@
 **已知缺口**（要么补掉，要么在文档里如实标注）：
 
 1. 发布链路只做了"扫描 + 抢占"，没有执行者：建单后 5 秒被抢占成 `PUBLISHING`，然后停在那里（实测）。
-2. SSE 的帧解析（`SseFrameParser`）与增量归一（`ChunkNormalizer`）还没接进 `/api/chat/stream`，目前只有单测在调用 —— 演示页看到的是 MockAdapter 逐字符推流。
+2. SSE 的帧解析（`SseFrameParser`）与增量归一（`ChunkNormalizer`）还没接进 `/api/chat/stream`，目前只有单测在调用 —— 页面上的流式效果来自 MockAdapter 逐字符推流。
 3. `TaskConsumer` 注释里写的"生产端 confirm"并没有真的配置：`application.yml` 没有 `publisher-confirm-type`，也没有 Confirm/Returns 回调。
 
 ## 6. 改代码时的约定

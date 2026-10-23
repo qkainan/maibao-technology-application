@@ -1,39 +1,758 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>maibao · SSE 流式演示</title>
-  <style>
-    body { font-family: -apple-system, "Microsoft YaHei", sans-serif; margin: 40px auto; max-width: 760px; color: #222; }
-    h1 { font-size: 20px; }
-    textarea { width: 100%; height: 70px; font-size: 14px; padding: 8px; }
-    button { padding: 8px 18px; font-size: 14px; cursor: pointer; }
-    #out { margin-top: 16px; padding: 12px; border: 1px solid #ddd; min-height: 120px; white-space: pre-wrap; line-height: 1.6; }
-    #reasoning { color: #888; font-size: 13px; white-space: pre-wrap; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>maibao · 功能测试台</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --line: #e3e6ec;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --accent: #4f46e5;
+    --ok: #16a34a;
+    --err: #dc2626;
+    --code-bg: #12161f;
+    --code-fg: #dbe2ef;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(255,255,255,.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .head-inner {
+    max-width: 1040px; margin: 0 auto; padding: 14px 20px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .health { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; }
+  .dot.up { background: var(--ok); box-shadow: 0 0 0 3px rgba(22,163,74,.15); }
+  .dot.down { background: var(--err); box-shadow: 0 0 0 3px rgba(220,38,38,.15); }
+
+  nav.tabs {
+    max-width: 1040px; margin: 0 auto; padding: 0 20px 12px;
+    display: flex; gap: 6px; overflow-x: auto; scrollbar-width: thin;
+  }
+  nav.tabs button {
+    border: 1px solid transparent; background: transparent; color: var(--muted);
+    padding: 7px 13px; border-radius: 8px; cursor: pointer; white-space: nowrap;
+    font: inherit; font-size: 13.5px;
+  }
+  nav.tabs button:hover { background: #eceef3; color: var(--text); }
+  nav.tabs button.active {
+    background: #fff; color: var(--accent); border-color: var(--line);
+    font-weight: 600; box-shadow: 0 1px 2px rgba(15,23,42,.05);
+  }
+
+  main { max-width: 1040px; margin: 0 auto; padding: 20px; }
+  section.panel { display: none; }
+  section.panel.active { display: block; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 20px; box-shadow: 0 1px 2px rgba(15,23,42,.04);
+  }
+  .card + .card { margin-top: 16px; }
+  h2 { font-size: 15px; margin: 0 0 4px; font-weight: 650; }
+  .hint { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
+  .hint code, .verb { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+  .verb {
+    display: inline-block; padding: 1px 7px; border-radius: 5px; margin-right: 6px;
+    background: #eef2ff; color: #4338ca; font-weight: 600;
+  }
+  .verb.post { background: #ecfdf5; color: #047857; }
+  .verb.get { background: #eff6ff; color: #1d4ed8; }
+
+  .row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+  .row > label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); min-width: 140px; }
+  .row > label.grow { flex: 1 1 320px; }
+  input, textarea {
+    font: inherit; font-size: 13.5px; color: var(--text);
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff;
+    width: 100%;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+  textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button.btn {
+    font: inherit; font-size: 13px; padding: 7px 14px; border-radius: 7px;
+    border: 1px solid var(--line); background: #fff; color: var(--text); cursor: pointer;
+  }
+  button.btn:hover { background: #f8fafc; }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.btn.primary:hover { background: #4338ca; }
+  button.btn:disabled { opacity: .45; cursor: not-allowed; }
+  button.btn.ghost { border-style: dashed; color: var(--muted); }
+
+  pre.out {
+    margin: 14px 0 0; padding: 12px 14px; border-radius: 9px;
+    background: var(--code-bg); color: var(--code-fg);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 12.5px; line-height: 1.65;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 420px; overflow: auto; min-height: 46px;
+    border-left: 3px solid transparent;
+  }
+  pre.out.ok { border-left-color: var(--ok); }
+  pre.out.err { border-left-color: var(--err); }
+  pre.out.pass { border-left-color: var(--ok); }
+  pre.out.fail { border-left-color: var(--err); }
+
+  .stream-box {
+    margin-top: 14px; border: 1px solid var(--line); border-radius: 9px;
+    padding: 12px 14px; background: #fbfcfe; min-height: 90px; white-space: pre-wrap;
+    font-size: 13.5px; line-height: 1.7;
+  }
+  .stream-box.reasoning { color: var(--muted); font-size: 12.5px; min-height: 40px; margin-top: 8px; background: #f8fafc; }
+  .meta { margin-top: 10px; font-size: 12px; color: var(--muted); font-family: ui-monospace, Consolas, monospace; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chips button {
+    font-size: 12px; padding: 4px 10px; border-radius: 20px; cursor: pointer;
+    border: 1px solid var(--line); background: #f8fafc; color: var(--muted);
+  }
+  .chips button:hover { border-color: var(--accent); color: var(--accent); }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 780px) {
+    .split { grid-template-columns: 1fr; }
+    .head-inner { padding: 12px 14px; }
+    main { padding: 14px; }
+    .card { padding: 16px; }
+  }
+  ul.links { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
+  ul.links li { margin: 4px 0; }
+  a { color: var(--accent); }
+</style>
 </head>
 <body>
-<h1>SSE 流式演示</h1>
-<p>服务端按帧推送，事件名区分 <code>text</code> / <code>reasoning</code> / <code>done</code>。</p>
-<textarea id="prompt">用三句话解释什么是状态机</textarea>
-<p><button onclick="go()">开始流式对话</button></p>
-<div id="reasoning"></div>
-<div id="out"></div>
+
+<header>
+  <div class="head-inner">
+    <h1>maibao <span>· 功能测试台</span></h1>
+    <div class="health">
+      <span id="health-dot" class="dot"></span>
+      <span id="health-text">检查中…</span>
+      <button class="btn ghost" id="health-refresh" style="padding:3px 9px;font-size:12px">刷新</button>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="测试场景">
+    <button role="tab" data-tab="chat" class="active">同步对话</button>
+    <button role="tab" data-tab="sse">SSE 流式</button>
+    <button role="tab" data-tab="workflow">工作流</button>
+    <button role="tab" data-tab="task">异步任务</button>
+    <button role="tab" data-tab="publish">发布 / 并发</button>
+    <button role="tab" data-tab="keys">密钥</button>
+    <button role="tab" data-tab="system">系统</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ============ 同步对话 ============ -->
+  <section class="panel active" data-panel="chat">
+    <div class="card">
+      <h2>同步对话</h2>
+      <p class="hint"><span class="verb post">POST</span><code>/api/chat</code> — 由 <code>AdapterRegistry</code> 按 model 前缀选适配器。<code>mock:demo</code> 不需要 API Key。</p>
+      <div class="row">
+        <label>model<input id="chat-model" value="mock:demo"></label>
+        <label>appKeyRef（可空）<input id="chat-key" placeholder="密钥 Tab 里创建的 id"></label>
+      </div>
+      <div class="row">
+        <label class="grow">prompt<textarea id="chat-prompt" rows="2">介绍一下你自己</textarea></label>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="chat-run">发送</button>
+        <button class="btn ghost" data-fill="chat" data-value="介绍一下你自己">示例</button>
+      </div>
+      <pre class="out" id="chat-out"></pre>
+    </div>
+  </section>
+
+  <!-- ============ SSE ============ -->
+  <section class="panel" data-panel="sse">
+    <div class="card">
+      <h2>SSE 流式对话</h2>
+      <p class="hint"><span class="verb get">GET</span><code>/api/chat/stream</code> — 事件名区分 <code>text</code> / <code>reasoning</code> / <code>done</code>，服务端用独立线程池推送。</p>
+      <div class="row">
+        <label>model<input id="sse-model" value="mock:demo"></label>
+        <label>appKeyRef（可空）<input id="sse-key" placeholder="密钥 Tab 里创建的 id"></label>
+      </div>
+      <div class="row">
+        <label class="grow">prompt<textarea id="sse-prompt" rows="2">用三句话解释什么是状态机</textarea></label>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="sse-start">开始接收</button>
+        <button class="btn" id="sse-stop" disabled>断开</button>
+        <span id="sse-meta" class="meta"></span>
+      </div>
+      <div class="stream-box reasoning" id="sse-reasoning"></div>
+      <div class="stream-box" id="sse-text"></div>
+      <p class="hint" style="margin-top:10px">
+        统计口径：每收到一个 SSE 事件记一帧。<code>done</code> 到达即收尾；若服务端直接断开，浏览器会尝试自动重连，本页会主动关闭并提示。
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 工作流 ============ -->
+  <section class="panel" data-panel="workflow">
+    <div class="card">
+      <h2>跑一个最小工作流</h2>
+      <p class="hint"><span class="verb post">POST</span><code>/api/workflow/demo</code> — LLM 节点 + 循环 3 轮。返回上下文快照，<code>round_executed</code> 应为 3。</p>
+      <div class="row">
+        <label class="grow">prompt<textarea id="wf-prompt" rows="2">hi</textarea></label>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="wf-demo-run">执行</button>
+      </div>
+      <pre class="out" id="wf-demo-out"></pre>
+    </div>
+
+    <div class="card">
+      <h2>图校验：找环</h2>
+      <p class="hint"><span class="verb post">POST</span><code>/api/workflow/validate</code> — 传邻接表，返回构成环的边。</p>
+      <div class="row">
+        <label class="grow">邻接表（JSON）<textarea id="wf-adj" rows="4">{"a":["b"],"b":["c"],"c":["a"]}</textarea></label>
+      </div>
+      <div class="chips">
+        <button data-adj='{"a":["b"],"b":["c"],"c":["a"]}'>三节点环</button>
+        <button data-adj='{"a":["b"],"b":["a"]}'>两节点环</button>
+        <button data-adj='{"a":["b","c"],"b":["d"],"c":["d"]}'>菱形（无环）</button>
+        <button data-adj='{"a":["a"]}'>自环</button>
+      </div>
+      <div class="actions" style="margin-top:12px">
+        <button class="btn primary" id="wf-validate-run">校验</button>
+      </div>
+      <pre class="out" id="wf-validate-out"></pre>
+      <p class="hint" style="margin-top:10px">
+        已知行为：实现返回的是 DFS <b>回边</b>（删掉这些边即可破环），不是"环上的所有边"。三节点环只会返回 <code>c-&gt;a</code>。
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 异步任务 ============ -->
+  <section class="panel" data-panel="task">
+    <div class="card">
+      <h2>提交异步任务</h2>
+      <p class="hint"><span class="verb post">POST</span><code>/api/task/submit</code> — <code>app.mq.enabled=true</code> 时走 RabbitMQ，否则降级为同步执行（返回值里带 <code>inline</code>）。</p>
+      <div class="row">
+        <label class="grow">payload<textarea id="task-payload" rows="2">hello from console</textarea></label>
+      </div>
+      <div class="row">
+        <label class="grow">taskId（可空，用于测幂等）<input id="task-id" placeholder="留空则自动生成 UUID"></label>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="task-run">提交</button>
+        <button class="btn ghost" id="task-twice">同 id 连提两次（测幂等）</button>
+      </div>
+      <pre class="out" id="task-out"></pre>
+      <p class="hint" style="margin-top:10px">
+        幂等验证要看服务端日志：第二次应打印 <code>duplicate message, ack and skip</code>。
+        异步链路可在 RabbitMQ 管理台查看队列 <code>maibao.task.queue</code>。
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 发布 / 并发 ============ -->
+  <section class="panel" data-panel="publish">
+    <div class="card">
+      <h2>创建 / 查看发布记录</h2>
+      <p class="hint"><span class="verb post">POST</span><code>/api/publish</code> · <span class="verb get">GET</span><code>/api/publish/{id}</code> — 立即发布也先落成 <code>SCHEDULED</code>，由扫描器统一认领。</p>
+      <div class="row">
+        <label>nodeId<input id="pub-node" value="node-1"></label>
+        <label>delaySeconds（可空）<input id="pub-delay" placeholder="留空 = 立即"></label>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="pub-create">创建</button>
+        <button class="btn" id="pub-get">查状态</button>
+      </div>
+      <pre class="out" id="pub-out"></pre>
+    </div>
+
+    <div class="split">
+      <div class="card">
+        <h2>抢占 / 收尾</h2>
+        <p class="hint"><span class="verb post">POST</span><code>/api/publish/{id}/claim</code> · <span class="verb post">POST</span><code>/api/publish/{id}/finish</code></p>
+        <div class="row">
+          <label class="grow">id<input id="pub-id-a" placeholder="创建后自动填入"></label>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="pub-claim">抢占</button>
+          <button class="btn" id="pub-finish-ok">收尾（成功）</button>
+          <button class="btn" id="pub-finish-fail">收尾（失败）</button>
+        </div>
+        <pre class="out" id="pub-op-out"></pre>
+      </div>
+
+      <div class="card">
+        <h2>并发抢占</h2>
+        <p class="hint"><span class="verb post">POST</span><code>/api/publish/{id}/race</code> — N 个线程同时抢一条，期望只有 1 个成功。</p>
+        <div class="row">
+          <label class="grow">id<input id="pub-id-b" placeholder="创建后自动填入"></label>
+          <label>线程数<input id="pub-threads" value="20"></label>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="pub-race">开抢</button>
+        </div>
+        <pre class="out" id="pub-race-out"></pre>
+      </div>
+    </div>
+
+    <p class="hint" style="margin-top:12px">
+      已知缺口：定时扫描每 5 秒跑一次，会把到期的 <code>SCHEDULED</code> 抢成 <code>PUBLISHING</code>，但目前没有执行者把它推进到终态 —— 记录会停在那里，这是实现现状，不是测试台的问题。
+    </p>
+  </section>
+
+  <!-- ============ 密钥 ============ -->
+  <section class="panel" data-panel="keys">
+    <div class="card">
+      <h2>写入 / 列表 / 读取（含越权）</h2>
+      <p class="hint"><span class="verb post">POST</span><code>/api/keys</code> · <span class="verb get">GET</span><code>/api/keys</code> · <span class="verb get">GET</span><code>/api/keys/{id}</code> — 明文入库存密文，列表只返回脱敏串。</p>
+      <div class="row">
+        <label>ownerId<input id="key-owner" value="u1"></label>
+        <label>projectId<input id="key-project" value="p1"></label>
+        <label>provider<input id="key-provider" value="openai"></label>
+      </div>
+      <div class="row">
+        <label class="grow">apiKey<input id="key-secret" value="sk-abcdefgh12345678"></label>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="key-create">写入</button>
+        <button class="btn" id="key-list">列表</button>
+      </div>
+      <pre class="out" id="key-out"></pre>
+    </div>
+
+    <div class="card">
+      <h2>按 id 读取（换 ownerId 触发 4030）</h2>
+      <div class="row">
+        <label class="grow">key id<input id="key-id" placeholder="写入后自动填入"></label>
+        <label>ownerId<input id="key-reader" value="u2"></label>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="key-detail">读取</button>
+        <button class="btn ghost" id="key-detail-self">用自己的 ownerId 读</button>
+      </div>
+      <pre class="out" id="key-detail-out"></pre>
+      <p class="hint" style="margin-top:10px">归属不匹配时返回 <code>code=4030</code>。前端隐藏字段不算权限控制，这里用不同 ownerId 直接验证服务端。</p>
+    </div>
+  </section>
+
+  <!-- ============ 系统 ============ -->
+  <section class="panel" data-panel="system">
+    <div class="card">
+      <h2>运行状态</h2>
+      <p class="hint"><span class="verb get">GET</span><code>/actuator/health</code> — 页面顶部的小圆点也来自这里，每 15 秒刷新一次。</p>
+      <div class="actions">
+        <button class="btn primary" id="sys-health">健康检查</button>
+        <button class="btn" id="sys-info">info</button>
+        <button class="btn" id="sys-metrics">metrics</button>
+      </div>
+      <pre class="out" id="sys-out"></pre>
+    </div>
+
+    <div class="card">
+      <h2>其他入口</h2>
+      <ul class="links">
+        <li><a href="/h2-console" target="_blank">H2 控制台</a> — JDBC URL <code>jdbc:h2:file:./data/maibao;AUTO_SERVER=TRUE</code>，用户 <code>sa</code>，密码空</li>
+        <li><a href="/actuator/health" target="_blank">/actuator/health</a></li>
+        <li><a href="http://localhost:15672" target="_blank">RabbitMQ 管理台</a> — guest / guest，看队列 <code>maibao.task.queue</code></li>
+      </ul>
+    </div>
+  </section>
+
+</main>
 
 <script>
-function go() {
-  const out = document.getElementById('out');
-  const reasoning = document.getElementById('reasoning');
-  out.textContent = '';
-  reasoning.textContent = '';
-  const prompt = encodeURIComponent(document.getElementById('prompt').value);
-  const es = new EventSource('/api/chat/stream?model=mock:demo&prompt=' + prompt);
+(function () {
+  'use strict';
 
-  es.addEventListener('reasoning', e => { reasoning.textContent += e.data; });
-  es.addEventListener('text', e => { out.textContent += e.data; });
-  es.addEventListener('done', () => es.close());
-  es.onerror = () => es.close();
-}
+  const $ = (id) => document.getElementById(id);
+
+  /* ---------- 通用请求 ---------- */
+  async function request(method, path, opts) {
+    opts = opts || {};
+    const url = new URL(path, location.origin);
+    const query = opts.query || {};
+    Object.keys(query).forEach(function (k) {
+      const v = query[k];
+      if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v);
+    });
+
+    const init = { method: method, headers: {} };
+    if (opts.json !== undefined) {
+      init.headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(opts.json);
+    }
+    if (opts.headers) Object.assign(init.headers, opts.headers);
+
+    const started = performance.now();
+    const res = await fetch(url, init);
+    const raw = await res.text();
+    let body;
+    try { body = JSON.parse(raw); } catch (e) { body = raw; }
+    return { status: res.status, elapsed: Math.round(performance.now() - started), body: body };
+  }
+
+  function bizCodeOf(body) {
+    if (body && typeof body === 'object' && !Array.isArray(body) && 'code' in body) return body.code;
+    return undefined;
+  }
+
+  function paint(outId, res, note) {
+    const out = $(outId);
+    out.classList.remove('ok', 'err');
+    const code = bizCodeOf(res.body);
+    if (code === 0) out.classList.add('ok');
+    if (code !== undefined && code !== 0) out.classList.add('err');
+
+    const meta = ['HTTP ' + res.status, res.elapsed + ' ms'];
+    if (code !== undefined) {
+      const msg = res.body && res.body.message ? ' ' + res.body.message : '';
+      meta.push('code=' + code + msg);
+    }
+    if (note) meta.push(note);
+
+    out.textContent = meta.join('  ·  ') + '\n\n' +
+      (typeof res.body === 'string' ? res.body : JSON.stringify(res.body, null, 2));
+  }
+
+  async function run(outId, fn) {
+    const out = $(outId);
+    out.classList.remove('ok', 'err', 'pass', 'fail');
+    out.textContent = '请求中…';
+    try {
+      return await fn();
+    } catch (e) {
+      out.classList.add('err');
+      out.textContent = '请求失败：' + (e && e.message ? e.message : e);
+    }
+  }
+
+  /* ---------- Tab 切换 ---------- */
+  const tabButtons = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
+  const panels = Array.prototype.slice.call(document.querySelectorAll('[data-panel]'));
+
+  function activate(name) {
+    let found = false;
+    tabButtons.forEach(function (b) {
+      const on = b.getAttribute('data-tab') === name;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+      if (on) found = true;
+    });
+    panels.forEach(function (p) {
+      p.classList.toggle('active', p.getAttribute('data-panel') === name);
+    });
+    if (found && history.replaceState) history.replaceState(null, '', '#' + name);
+  }
+
+  tabButtons.forEach(function (b) {
+    b.addEventListener('click', function () { activate(b.getAttribute('data-tab')); });
+  });
+
+  const initial = (location.hash || '').replace('#', '');
+  activate(initial && tabButtons.some(function (b) { return b.getAttribute('data-tab') === initial; }) ? initial : 'chat');
+
+  /* ---------- 同步对话 ---------- */
+  $('chat-run').addEventListener('click', function () {
+    run('chat-out', async function () {
+      const res = await request('POST', '/api/chat', {
+        query: { model: $('chat-model').value, prompt: $('chat-prompt').value, appKeyRef: $('chat-key').value }
+      });
+      paint('chat-out', res, 'data 长度 ' + (typeof res.body.data === 'string' ? res.body.data.length : '-'));
+    });
+  });
+
+  document.querySelectorAll('[data-fill]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      $('chat-prompt').value = btn.getAttribute('data-value') || '';
+    });
+  });
+
+  /* ---------- SSE ---------- */
+  let es = null;
+  let sseStartedAt = 0;
+  const sseCount = { text: 0, reasoning: 0 };
+
+  function sseMeta(text) { $('sse-meta').textContent = text; }
+
+  function sseFinish(reason) {
+    if (!es) return;
+    es.close();
+    es = null;
+    $('sse-start').disabled = false;
+    $('sse-stop').disabled = true;
+    sseMeta(reason + ' · text ' + sseCount.text + ' 帧 · reasoning ' + sseCount.reasoning +
+      ' 帧 · ' + Math.round(performance.now() - sseStartedAt) + ' ms');
+  }
+
+  $('sse-start').addEventListener('click', function () {
+    if (es) es.close();
+    es = null;
+    sseCount.text = 0;
+    sseCount.reasoning = 0;
+    $('sse-text').textContent = '';
+    $('sse-reasoning').textContent = '';
+    sseStartedAt = performance.now();
+    sseMeta('连接中…');
+
+    const url = new URL('/api/chat/stream', location.origin);
+    url.searchParams.set('model', $('sse-model').value);
+    url.searchParams.set('prompt', $('sse-prompt').value);
+    const key = $('sse-key').value;
+    if (key) url.searchParams.set('appKeyRef', key);
+
+    const source = new EventSource(url);
+    es = source;
+    $('sse-start').disabled = true;
+    $('sse-stop').disabled = false;
+
+    source.addEventListener('reasoning', function (e) {
+      sseCount.reasoning += 1;
+      $('sse-reasoning').textContent += e.data;
+    });
+    source.addEventListener('text', function (e) {
+      sseCount.text += 1;
+      $('sse-text').textContent += e.data;
+    });
+    source.addEventListener('done', function () {
+      sseFinish('完成');
+    });
+    source.onerror = function () {
+      if (!es) return;
+      const state = source.readyState;
+      sseFinish(state === EventSource.CLOSED ? '连接已关闭' : '连接中断');
+    };
+  });
+
+  $('sse-stop').addEventListener('click', function () { sseFinish('手动断开'); });
+
+  /* ---------- 工作流 ---------- */
+  $('wf-demo-run').addEventListener('click', function () {
+    run('wf-demo-out', async function () {
+      const res = await request('POST', '/api/workflow/demo', { json: { prompt: $('wf-prompt').value } });
+      const exec = res.body && res.body.data ? res.body.data.round_executed : undefined;
+      paint('wf-demo-out', res, 'round_executed=' + exec + (exec === 3 ? '（符合预期）' : ''));
+    });
+  });
+
+  $('wf-validate-run').addEventListener('click', function () {
+    run('wf-validate-out', async function () {
+      let adj;
+      try {
+        adj = JSON.parse($('wf-adj').value);
+      } catch (e) {
+        $('wf-validate-out').classList.add('err');
+        $('wf-validate-out').textContent = '邻接表不是合法 JSON：' + e.message;
+        return;
+      }
+      const res = await request('POST', '/api/workflow/validate', { json: adj });
+      const edges = res.body && Array.isArray(res.body.data) ? res.body.data : [];
+      paint('wf-validate-out', res, '返回 ' + edges.length + ' 条边');
+    });
+  });
+
+  document.querySelectorAll('[data-adj]').forEach(function (btn) {
+    btn.addEventListener('click', function () { $('wf-adj').value = btn.getAttribute('data-adj'); });
+  });
+
+  /* ---------- 异步任务 ---------- */
+  async function submitTask(outId, id) {
+    return request('POST', '/api/task/submit', {
+      query: { payload: $('task-payload').value, taskId: id }
+    });
+  }
+
+  $('task-run').addEventListener('click', function () {
+    run('task-out', async function () {
+      const res = await submitTask('task-out', $('task-id').value.trim());
+      paint('task-out', res, '返回串里的 async / inline 表示实际走的链路');
+    });
+  });
+
+  $('task-twice').addEventListener('click', function () {
+    run('task-out', async function () {
+      const id = $('task-id').value.trim() || 'dup-' + Date.now();
+      $('task-id').value = id;
+      const first = await submitTask('task-out', id);
+      const second = await submitTask('task-out', id);
+      const out = $('task-out');
+      out.classList.remove('ok', 'err');
+      out.classList.add('ok');
+      out.textContent =
+        '同一 taskId 提交两次，用于验证消费幂等\n' +
+        'taskId = ' + id + '\n\n' +
+        '第一次：HTTP ' + first.status + ' · ' + first.elapsed + ' ms\n' + JSON.stringify(first.body, null, 2) + '\n\n' +
+        '第二次：HTTP ' + second.status + ' · ' + second.elapsed + ' ms\n' + JSON.stringify(second.body, null, 2) + '\n\n' +
+        '服务端日志应出现 duplicate message, ack and skip（第二次）';
+    });
+  });
+
+  /* ---------- 发布 / 并发 ---------- */
+  function fillPublishId(id) {
+    if (id === undefined || id === null) return;
+    $('pub-id-a').value = id;
+    $('pub-id-b').value = id;
+  }
+
+  $('pub-create').addEventListener('click', function () {
+    run('pub-out', async function () {
+      const res = await request('POST', '/api/publish', {
+        query: { nodeId: $('pub-node').value, delaySeconds: $('pub-delay').value }
+      });
+      const id = res.body && res.body.data ? res.body.data.id : undefined;
+      fillPublishId(id);
+      paint('pub-out', res, id ? '已回填 id=' + id : '');
+    });
+  });
+
+  $('pub-get').addEventListener('click', function () {
+    run('pub-out', async function () {
+      const id = $('pub-id-a').value.trim();
+      if (!id) { $('pub-out').textContent = '先创建一条记录，或在左侧填入 id'; return; }
+      const res = await request('GET', '/api/publish/' + encodeURIComponent(id));
+      paint('pub-out', res, '');
+    });
+  });
+
+  $('pub-claim').addEventListener('click', function () {
+    run('pub-op-out', async function () {
+      const id = $('pub-id-a').value.trim();
+      if (!id) { $('pub-op-out').textContent = '先创建一条记录'; return; }
+      const res = await request('POST', '/api/publish/' + encodeURIComponent(id) + '/claim');
+      paint('pub-op-out', res, res.body && res.body.data === true ? '抢占成功' : '抢占失败（状态已被推进或不是 SCHEDULED）');
+    });
+  });
+
+  function finish(success) {
+    run('pub-op-out', async function () {
+      const id = $('pub-id-a').value.trim();
+      if (!id) { $('pub-op-out').textContent = '先创建一条记录'; return; }
+      const res = await request('POST', '/api/publish/' + encodeURIComponent(id) + '/finish', {
+        query: { success: String(success), reason: success ? '' : 'test console: simulated failure' }
+      });
+      paint('pub-op-out', res, success ? '' : '失败原因已写入 fail_reason');
+    });
+  }
+
+  $('pub-finish-ok').addEventListener('click', function () { finish(true); });
+  $('pub-finish-fail').addEventListener('click', function () { finish(false); });
+
+  $('pub-race').addEventListener('click', function () {
+    run('pub-race-out', async function () {
+      const id = $('pub-id-b').value.trim();
+      if (!id) { $('pub-race-out').textContent = '先创建一条记录'; return; }
+      const res = await request('POST', '/api/publish/' + encodeURIComponent(id) + '/race', {
+        query: { threads: $('pub-threads').value }
+      });
+      const out = $('pub-race-out');
+      const got = res.body ? res.body.data : undefined;
+      const pass = got === 1;
+      out.classList.remove('ok', 'err', 'pass', 'fail');
+      out.classList.add(pass ? 'pass' : 'fail');
+      out.textContent =
+        (pass ? 'PASS' : 'FAIL') + ' · 成功抢占 ' + got + ' 个（期望 1）\n' +
+        'HTTP ' + res.status + ' · ' + res.elapsed + ' ms · threads=' + $('pub-threads').value + '\n\n' +
+        JSON.stringify(res.body, null, 2);
+    });
+  });
+
+  /* ---------- 密钥 ---------- */
+  $('key-create').addEventListener('click', function () {
+    run('key-out', async function () {
+      const res = await request('POST', '/api/keys', {
+        query: {
+          ownerId: $('key-owner').value,
+          projectId: $('key-project').value,
+          provider: $('key-provider').value,
+          apiKey: $('key-secret').value
+        }
+      });
+      const id = res.body && res.body.data ? res.body.data.id : undefined;
+      if (id !== undefined) $('key-id').value = id;
+      const masked = res.body && res.body.data ? res.body.data.masked : undefined;
+      paint('key-out', res, masked ? '脱敏串 ' + masked : '');
+    });
+  });
+
+  $('key-list').addEventListener('click', function () {
+    run('key-out', async function () {
+      const res = await request('GET', '/api/keys', { query: { ownerId: $('key-owner').value } });
+      const n = res.body && Array.isArray(res.body.data) ? res.body.data.length : 0;
+      paint('key-out', res, '共 ' + n + ' 条，只含脱敏串');
+    });
+  });
+
+  $('key-detail').addEventListener('click', function () {
+    run('key-detail-out', async function () {
+      const id = $('key-id').value.trim();
+      if (!id) { $('key-detail-out').textContent = '先写入一条密钥，或填入 id'; return; }
+      const res = await request('GET', '/api/keys/' + encodeURIComponent(id), {
+        query: { ownerId: $('key-reader').value }
+      });
+      const code = bizCodeOf(res.body);
+      paint('key-detail-out', res, code === 4030 ? '越权被拒绝（预期）' : '');
+    });
+  });
+
+  $('key-detail-self').addEventListener('click', function () {
+    $('key-reader').value = $('key-owner').value;
+    $('key-detail').click();
+  });
+
+  /* ---------- 系统 ---------- */
+  async function checkHealth(showBody) {
+    try {
+      const res = await request('GET', '/actuator/health');
+      const up = res.body && res.body.status === 'UP';
+      const dot = $('health-dot');
+      dot.classList.remove('up', 'down');
+      dot.classList.add(up ? 'up' : 'down');
+      $('health-text').textContent = up ? 'UP' : (res.body && res.body.status ? res.body.status : 'DOWN');
+      if (showBody) paint('sys-out', res, up ? '' : '服务未就绪');
+    } catch (e) {
+      $('health-dot').classList.remove('up');
+      $('health-dot').classList.add('down');
+      $('health-text').textContent = '连接失败';
+      if (showBody) {
+        $('sys-out').classList.add('err');
+        $('sys-out').textContent = '健康检查失败：' + e.message;
+      }
+    }
+  }
+
+  $('health-refresh').addEventListener('click', function () { checkHealth(true); });
+  $('sys-health').addEventListener('click', function () { checkHealth(true); });
+
+  $('sys-info').addEventListener('click', function () {
+    run('sys-out', async function () {
+      const res = await request('GET', '/actuator/info');
+      paint('sys-out', res);
+    });
+  });
+
+  $('sys-metrics').addEventListener('click', function () {
+    run('sys-out', async function () {
+      const res = await request('GET', '/actuator/metrics');
+      const names = res.body && Array.isArray(res.body.names) ? res.body.names : [];
+      paint('sys-out', res, '共 ' + names.length + ' 个指标');
+    });
+  });
+
+  checkHealth(false);
+  setInterval(function () { checkHealth(false); }, 15000);
+})();
 </script>
 </body>
 </html>
