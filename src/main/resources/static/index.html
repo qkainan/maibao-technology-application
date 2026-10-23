@@ -284,7 +284,7 @@
         <h2>抢占 / 收尾</h2>
         <p class="hint"><span class="verb post">POST</span><code>/api/publish/{id}/claim</code> · <span class="verb post">POST</span><code>/api/publish/{id}/finish</code></p>
         <div class="row">
-          <label class="grow">id<input id="pub-id-a" placeholder="创建后自动填入"></label>
+          <label class="grow">id<input id="pub-id-a" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="创建后自动填入"></label>
         </div>
         <div class="actions">
           <button class="btn primary" id="pub-claim">抢占</button>
@@ -298,7 +298,7 @@
         <h2>并发抢占</h2>
         <p class="hint"><span class="verb post">POST</span><code>/api/publish/{id}/race</code> — N 个线程同时抢一条，期望只有 1 个成功。</p>
         <div class="row">
-          <label class="grow">id<input id="pub-id-b" placeholder="创建后自动填入"></label>
+          <label class="grow">id<input id="pub-id-b" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="创建后自动填入"></label>
           <label>线程数<input id="pub-threads" value="20"></label>
         </div>
         <div class="actions">
@@ -336,7 +336,7 @@
     <div class="card">
       <h2>按 id 读取（换 ownerId 触发 4030）</h2>
       <div class="row">
-        <label class="grow">key id<input id="key-id" placeholder="写入后自动填入"></label>
+        <label class="grow">key id<input id="key-id" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="写入后自动填入"></label>
         <label>ownerId<input id="key-reader" value="u2"></label>
       </div>
       <div class="actions">
@@ -437,6 +437,24 @@
       out.classList.add('err');
       out.textContent = '请求失败：' + (e && e.message ? e.message : e);
     }
+  }
+
+  function hint(outId, text) {
+    const out = $(outId);
+    out.classList.remove('ok', 'err', 'pass', 'fail');
+    out.classList.add('err');
+    out.textContent = text;
+  }
+
+  /**
+   * 路径里的 id 只接受数字。非数字会让服务端在参数绑定阶段就抛类型转换异常，
+   * 这里先挡掉，避免把 apiKey 之类的值当成 id 发出去。
+   */
+  function idOf(inputId, label, outId, emptyHint) {
+    const raw = ($(inputId).value || '').trim();
+    if (!raw) { hint(outId, emptyHint || ('请先填入 ' + label)); return null; }
+    if (!/^\d+$/.test(raw)) { hint(outId, label + ' 必须是数字，当前值："' + raw + '"'); return null; }
+    return raw;
   }
 
   /* ---------- Tab 切换 ---------- */
@@ -618,27 +636,27 @@
   });
 
   $('pub-get').addEventListener('click', function () {
+    const id = idOf('pub-id-a', 'publish id', 'pub-out', '请先创建一条记录，或填入数字 id');
+    if (!id) return;
     run('pub-out', async function () {
-      const id = $('pub-id-a').value.trim();
-      if (!id) { $('pub-out').textContent = '先创建一条记录，或在左侧填入 id'; return; }
       const res = await request('GET', '/api/publish/' + encodeURIComponent(id));
       paint('pub-out', res, '');
     });
   });
 
   $('pub-claim').addEventListener('click', function () {
+    const id = idOf('pub-id-a', 'publish id', 'pub-op-out', '请先创建一条记录，或填入数字 id');
+    if (!id) return;
     run('pub-op-out', async function () {
-      const id = $('pub-id-a').value.trim();
-      if (!id) { $('pub-op-out').textContent = '先创建一条记录'; return; }
       const res = await request('POST', '/api/publish/' + encodeURIComponent(id) + '/claim');
       paint('pub-op-out', res, res.body && res.body.data === true ? '抢占成功' : '抢占失败（状态已被推进或不是 SCHEDULED）');
     });
   });
 
   function finish(success) {
+    const id = idOf('pub-id-a', 'publish id', 'pub-op-out', '请先创建一条记录，或填入数字 id');
+    if (!id) return;
     run('pub-op-out', async function () {
-      const id = $('pub-id-a').value.trim();
-      if (!id) { $('pub-op-out').textContent = '先创建一条记录'; return; }
       const res = await request('POST', '/api/publish/' + encodeURIComponent(id) + '/finish', {
         query: { success: String(success), reason: success ? '' : 'test console: simulated failure' }
       });
@@ -650,9 +668,9 @@
   $('pub-finish-fail').addEventListener('click', function () { finish(false); });
 
   $('pub-race').addEventListener('click', function () {
+    const id = idOf('pub-id-b', 'publish id', 'pub-race-out', '请先创建一条记录，或填入数字 id');
+    if (!id) return;
     run('pub-race-out', async function () {
-      const id = $('pub-id-b').value.trim();
-      if (!id) { $('pub-race-out').textContent = '先创建一条记录'; return; }
       const res = await request('POST', '/api/publish/' + encodeURIComponent(id) + '/race', {
         query: { threads: $('pub-threads').value }
       });
@@ -695,9 +713,9 @@
   });
 
   $('key-detail').addEventListener('click', function () {
+    const id = idOf('key-id', 'key id', 'key-detail-out', '请先写入一条密钥，或填入数字 id');
+    if (!id) return;
     run('key-detail-out', async function () {
-      const id = $('key-id').value.trim();
-      if (!id) { $('key-detail-out').textContent = '先写入一条密钥，或填入 id'; return; }
       const res = await request('GET', '/api/keys/' + encodeURIComponent(id), {
         query: { ownerId: $('key-reader').value }
       });
