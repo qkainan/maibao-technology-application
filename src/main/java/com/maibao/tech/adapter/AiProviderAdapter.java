@@ -5,7 +5,7 @@ import java.util.function.Consumer;
 /**
  * 适配器接口。每个厂商实现自己的协议差异，上层只调用这里。
  *
- * <p>对应简历：以适配器模式统一新旧 LLM 节点的出入参，避免 N×M 的适配爆炸。</p>
+ * <p>设计目标：用适配器模式统一各厂商 LLM 节点的出入参，避免 N×M 的适配爆炸。</p>
  */
 public interface AiProviderAdapter {
 

@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Configuration;
 /**
  * 线程池：流式转发是 IO 密集 + 长连接，必须和业务线程池隔离。
  *
- * <p>面试点：核心线程、队列容量、拒绝策略为什么这么选。</p>
+ * <p>选型要点：核心线程、队列容量、拒绝策略为什么这么定。</p>
  */
 @Configuration
 public class ExecutorConfig {

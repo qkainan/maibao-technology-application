@@ -1,6 +1,6 @@
 # maibao-technology-application
 
-> 一个**为面试准备**的后端复刻项目：把简历里写过的技术点，做成可以跑起来、可以点开看代码的东西。
+> 一个 AI 应用平台的关键技术最小实现：多厂商模型适配、SSE 流式、工作流循环、异步任务、发布状态机与并发控制、密钥加密。每个点都拆成可运行、可单独验证的代码。
 
 技术栈：Java 17 · Spring Boot 3.2 · Spring Data JPA · H2 · RabbitMQ(可选) · Maven
 
@@ -8,19 +8,21 @@
 
 ## 为什么做这个项目
 
-简历上的每一句话都应该能被追问三层。这个项目的作用是：**当面试官问"你具体怎么做的"，可以直接打开代码指给他看。**
+AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式链路，一次发布要经过状态机与并发抢占，一条消息要保证幂等。这些部分在业务代码里往往埋得很深，最后只能停在"用了什么"。
 
-| 简历里的技术点 | 在这个项目里 |
+这个项目把它们各自切成最小单元：每个模块只保留一处核心机制，配对应的单测，以及可以直接调用的接口。
+
+| 技术点 | 在这个项目里 |
 |---|---|
 | 适配器模式统一多厂商出入参 | `adapter/` — `AiProviderAdapter` + `AdapterRegistry` |
 | 循环节点（循环变量 / 终止条件 / 轮次上限） | `workflow/LoopNode.java` |
 | SSE 流式链路（帧解析 + 增量归一） | `chat/stream/SseFrameParser.java`、`ChunkNormalizer.java` |
-| RabbitMQ（可靠性三件套 + 消费幂等） | `mq/` — `RabbitTaskDispatcher`、`TaskConsumer`、`ProcessedTask` |
+| RabbitMQ（消息持久化 + 手动 ack + 消费幂等） | `mq/` — `RabbitTaskDispatcher`、`TaskConsumer`、`ProcessedTask` |
 | 多线程与锁（状态抢占、乐观锁） | `publish/` — `PublishRepository.casStatus` |
 | 密钥加密（密文入库 + 归属校验） | `security/` — `AesGcmCipher`、`KeyVaultService` |
 | 构建与发布（分层缓存 + 多阶段） | `Dockerfile`、`deploy/nginx.conf`、`.github/workflows/ci.yml` |
 
-详细的"代码位置 → 怎么讲"对照见 [`docs/01-技术点与代码对照.md`](docs/01-技术点与代码对照.md)。
+每个技术点的设计取舍与常见疑问见 [`docs/01-技术点与代码对照.md`](docs/01-技术点与代码对照.md)。
 
 ---
 
@@ -108,5 +110,5 @@ mvn test
 ## 说明
 
 - 这是一个**技术验证型项目**，业务是"调 API Key 做 AI 对话"，目的是展示机制而不是功能完整度。
-- 真实的发布/灰度/调度在公司走的是独立服务，这里只复刻**业务对象的状态与并发控制**这一层。
+- 发布、灰度、调度在真实系统里通常由独立服务承担，这里只保留**业务对象的状态与并发控制**这一层。
 - 没有 API Key 也能跑：`MockAdapter` 会兜底生成回复。

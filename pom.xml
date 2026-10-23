@@ -15,7 +15,7 @@
   <artifactId>maibao-technology-application</artifactId>
   <version>1.0.0</version>
   <name>maibao-technology-application</name>
-  <description>面试复刻项目：AI 应用平台的关键技术点（适配器 / 循环节点 / SSE / MQ / 并发控制 / 加密 / 构建发布）</description>
+  <description>AI 应用平台关键技术的最小实现（适配器 / 循环节点 / SSE / MQ / 并发控制 / 加密 / 构建发布）</description>
 
   <properties>
     <java.version>17</java.version>
