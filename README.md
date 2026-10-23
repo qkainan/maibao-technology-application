@@ -51,7 +51,7 @@ mvn spring-boot:run
 ### 数据库（默认 H2，零安装）
 
 默认用 **H2 文件库**：`jdbc:h2:file:./data/maibao`，启动时按实体自动建表，`data/` 目录自动生成。
-控制台：<http://localhost:8080/h2-console>（JDBC URL 填 `jdbc:h2:file:./data/maibao`，用户 `sa`，密码空）
+控制台：<http://localhost:8080/h2-console>（JDBC URL 填 `jdbc:h2:file:./data/maibao;AUTO_SERVER=TRUE`，用户 `sa`，密码空）
 
 想用 MySQL 演示 `EXPLAIN` 与索引效果时：
 
