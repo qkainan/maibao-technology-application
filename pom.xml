@@ -47,6 +47,14 @@
       <artifactId>h2</artifactId>
       <scope>runtime</scope>
     </dependency>
+
+    <!-- 可选：切换到 MySQL 时再放开（配合 application-mysql.yml）
+    <dependency>
+      <groupId>com.mysql</groupId>
+      <artifactId>mysql-connector-j</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>

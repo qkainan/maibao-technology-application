@@ -48,6 +48,20 @@ mvn spring-boot:run
 | POST | `/api/keys?...` | 写入密钥（密文入库，返回脱敏串） |
 | GET | `/api/keys/{id}?ownerId=other` | **越权演示**：返回 4030 |
 
+### 数据库（默认 H2，零安装）
+
+默认用 **H2 文件库**：`jdbc:h2:file:./data/maibao`，启动时按实体自动建表，`data/` 目录自动生成。
+控制台：<http://localhost:8080/h2-console>（JDBC URL 填 `jdbc:h2:file:./data/maibao`，用户 `sa`，密码空）
+
+想用 MySQL 演示 `EXPLAIN` 与索引效果时：
+
+1. 建库：`CREATE DATABASE maibao DEFAULT CHARSET utf8mb4;`
+2. 打开 `pom.xml` 里 `mysql-connector-j` 那段注释
+3. 启动加参数：`mvn spring-boot:run -Dspring-boot.run.profiles=mysql`
+
+`publish_record` 上已声明联合索引 `idx_status_scheduled_at (status, scheduled_at)`，
+对应"按 status + scheduled_at 扫到期任务"的查询，可以拿它当场演示 `EXPLAIN`。
+
 ### RabbitMQ（默认开启）
 
 `application.yml` 里默认是 `app.mq.enabled: true`。需要本地有 RabbitMQ：

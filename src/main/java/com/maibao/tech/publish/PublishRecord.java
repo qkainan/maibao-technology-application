@@ -9,6 +9,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 /**
@@ -17,7 +18,12 @@ import jakarta.persistence.Table;
  * <p>字段按四类拆分：生命周期 status、可调用性（本 demo 省略）、来源标记 isScheduled、进度 grayPercent。</p>
  */
 @Entity
-@Table(name = "publish_record")
+@Table(name = "publish_record",
+        indexes = {
+                // 到期扫描的查询条件是 status = ? AND scheduled_at <= ?：
+                // 等值列在前、范围列在后，才能用上这条联合索引。
+                @Index(name = "idx_status_scheduled_at", columnList = "status, scheduled_at")
+        })
 public class PublishRecord {
 
     @Id
