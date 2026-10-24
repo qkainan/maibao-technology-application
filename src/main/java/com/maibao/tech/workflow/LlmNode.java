@@ -27,7 +27,8 @@ public class LlmNode implements Node {
     @Override
     public void execute(NodeContext ctx) {
         String prompt = ctx.getString(promptVar);
-        String reply = chatService.chat("", model, prompt == null ? "" : prompt);
+        // 工作流里的调用统一记在 "workflow" 名下，便于和用户对话分开统计
+        String reply = chatService.chat("workflow", "", model, prompt == null ? "" : prompt);
         ctx.set(outputVar, reply);
     }
 }

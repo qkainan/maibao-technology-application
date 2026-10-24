@@ -2,7 +2,7 @@
 
 > 一个 AI 应用平台的关键技术最小实现：多厂商模型适配、SSE 流式、工作流循环、异步任务、发布状态机与并发控制、密钥加密。每个点都拆成可运行、可单独验证的代码。
 
-技术栈：Java 17 · Spring Boot 3.2 · Spring Data JPA · H2 · RabbitMQ(可选) · Maven
+技术栈：Java 17 · Spring Boot 3.2 · Spring Data JPA · MySQL 8（H2 可选）· RabbitMQ · Maven
 
 ---
 
@@ -21,6 +21,7 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 | 多线程与锁（状态抢占、乐观锁） | `publish/` — `PublishRepository.casStatus` |
 | 密钥加密（密文入库 + 归属校验） | `security/` — `AesGcmCipher`、`KeyVaultService` |
 | 构建与发布（分层缓存 + 多阶段） | `Dockerfile`、`deploy/nginx.conf`、`.github/workflows/ci.yml` |
+| 用量与成本（对话埋点 + 按天聚合） | `usage/` — `UsageService`、`TokenEstimator`、`CostCalculator` |
 
 每个技术点的设计取舍与常见疑问见 [`docs/01-技术点与代码对照.md`](docs/01-技术点与代码对照.md)。
 
@@ -29,7 +30,11 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 ## 快速开始
 
 ```bash
-# 1. 跑起来（需要本地 RabbitMQ，见「RabbitMQ」一节）
+# 0. 建库（MySQL 8）并把密码放本地文件（不进仓库）
+mysql -u root -p -e "CREATE DATABASE maibao_technology_application DEFAULT CHARSET utf8mb4;"
+cp application-local.yml.example application-local.yml   # 填 spring.datasource.password
+
+# 1. 跑起来（需要本地 MySQL 与 RabbitMQ，见下面两节）
 mvn spring-boot:run
 
 # 2. 打开功能测试台（按 Tab 覆盖全部接口）
@@ -40,7 +45,7 @@ mvn spring-boot:run
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/chat?prompt=...&model=mock:echo` | 同步对话 |
+| POST | `/api/chat?prompt=...&model=mock:echo&userId=u1` | 同步对话（`userId` 用于用量统计） |
 | GET | `/api/chat/stream?prompt=...` | **SSE 流式**（浏览器直接打开看） |
 | POST | `/api/workflow/run` | 跑一个「LLM 节点 + 循环 3 轮」的工作流 |
 | POST | `/api/workflow/validate` | 图校验：传邻接表，返回环上的边 |
@@ -50,20 +55,39 @@ mvn spring-boot:run
 | POST | `/api/publish/{id}/race?threads=20` | **并发验证**：20 线程抢一条，应返回 1 |
 | POST | `/api/keys?...` | 写入密钥（密文入库，返回脱敏串） |
 | GET | `/api/keys/{id}?ownerId=other` | **越权校验**：返回 4030 |
+| GET | `/api/usage/queries?userId=u1&limit=20` | 最近对话流水 |
+| GET | `/api/usage/cost?userId=u1` | 成本明细（模型 × 天） |
+| GET | `/api/usage/summary?userId=u1` | 累计请求数 / token / 成本 |
 
-### 数据库（默认 H2，零安装）
+### 数据库（MySQL 8）
 
-默认用 **H2 文件库**：`jdbc:h2:file:./data/maibao`，启动时按实体自动建表，`data/` 目录自动生成。
-控制台：<http://localhost:8080/h2-console>（JDBC URL 填 `jdbc:h2:file:./data/maibao;AUTO_SERVER=TRUE`，用户 `sa`，密码空）
+默认连 `maibao_technology_application`，账号 `root`；密码从 `application-local.yml`（已在 `.gitignore`）或环境变量 `DB_PASSWORD` 读取：
 
-想验证 MySQL 的执行计划与索引效果时：
+```yaml
+spring:
+  datasource:
+    password: 你的密码
+```
 
-1. 建库：`CREATE DATABASE maibao DEFAULT CHARSET utf8mb4;`
-2. 打开 `pom.xml` 里 `mysql-connector-j` 那段注释
-3. 启动加参数：`mvn spring-boot:run -Dspring-boot.run.profiles=mysql`
+启动时 Hibernate（`ddl-auto: update`）自动建表：
 
-`publish_record` 上已声明联合索引 `idx_status_scheduled_at (status, scheduled_at)`，
-对应"按 status + scheduled_at 扫到期任务"的查询，可以拿它验证执行计划。
+| 表 | 用途 |
+|---|---|
+| `publish_record` | 发布状态机（含 `idx_status_scheduled_at`） |
+| `processed_task` | MQ 消费去重（唯一约束） |
+| `failed_task` | 消费重试耗尽后的失败记录 |
+| `api_key` | 密钥密文与脱敏串 |
+| `user_query_log` | 每次 AI 对话的流水（token、成本、耗时、状态） |
+| `cost_accounting` | 成本按「用户 × 模型 × 天」聚合，唯一键 `uk_cost_user_model_date` |
+
+不装 MySQL 时可以用 H2 profile：
+
+```bash
+mvn spring-boot:run -Dspring-boot.run.profiles=h2
+# H2 控制台 http://localhost:8080/h2-console
+```
+
+计费是模拟的：token 由 `TokenEstimator` 估算（中文 1 字 ≈ 1 token，其余 4 字符 ≈ 1 token），单价在 `app.cost.pricing` 里按模型前缀配置。
 
 ### RabbitMQ（必需）
 
@@ -123,6 +147,7 @@ src/main/java/com/maibao/tech/
 ├── mq/           RabbitMQ 生产/消费、确认与重试、失败落表
 ├── publish/      发布状态机、执行器、乐观锁抢占与超时回收
 ├── security/     AES-GCM 加密、密钥归属校验
+├── usage/        对话埋点与成本聚合（流水 + 按天累计）
 ├── config/       线程池等基础配置
 └── common/       统一响应、异常处理
 ```
@@ -135,6 +160,7 @@ src/main/java/com/maibao/tech/
 | `mq/domain` | `TaskMessage`（消息体）、`ProcessedTask`、`FailedTask`（PO） |
 | `publish/domain` | `PublishRecord`（PO）、`PublishStatus`（枚举） |
 | `security/domain` | `ApiKeyEntity`（PO） |
+| `usage/domain` | `UserQueryLog`、`CostAccounting`（PO）、`QueryLogView`、`CostView`、`UsageSummaryView`（VO） |
 | `common/domain` | `ApiResponse`（统一响应 VO） |
 
 ---
@@ -145,7 +171,7 @@ src/main/java/com/maibao/tech/
 mvn test
 ```
 
-18 个用例全部通过（2026-10-24）。
+27 个用例全部通过（2026-10-24）。
 
 覆盖的关键点：
 - `SseFrameParserTest` — 半包 / 粘包 / 多帧切分

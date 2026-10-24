@@ -1,0 +1,5 @@
+# 本地 MySQL 连接密码（不进仓库；缺省用环境变量 DB_PASSWORD）
+# 复制为 application-local.yml 后填入自己的密码即可。
+spring:
+  datasource:
+    password: ${DB_PASSWORD:}

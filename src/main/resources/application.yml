@@ -18,19 +18,18 @@ server:
 spring:
   application:
     name: maibao-technology-application
+  # 本地密码等敏感配置放 application-local.yml（已在 .gitignore），缺失时不影响启动
+  config:
+    import: optional:file:./application-local.yml
   datasource:
-    url: jdbc:h2:file:./data/maibao;AUTO_SERVER=TRUE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
+    url: jdbc:mysql://localhost:3306/maibao_technology_application?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
   jpa:
     hibernate:
       ddl-auto: update
     open-in-view: false
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
   rabbitmq:
     host: localhost
     port: 5672
@@ -78,7 +77,22 @@ app:
   provider:
     openai:
       base-url: https://api.openai.com/v1
+      # 不建库里的密钥时，可直接配在 yml 或环境变量里
+      api-key: ${OPENAI_API_KEY:}
       timeout-ms: 60000
+  cost:
+    currency: CNY
+    # 每 1000 token 的价格；key 取 model 的前缀（mock / openai），default 兜底
+    pricing:
+      default:
+        input-per-1k: 0.002
+        output-per-1k: 0.006
+      mock:
+        input-per-1k: 0.001
+        output-per-1k: 0.002
+      openai:
+        input-per-1k: 0.15
+        output-per-1k: 0.60
 
 logging:
   level:

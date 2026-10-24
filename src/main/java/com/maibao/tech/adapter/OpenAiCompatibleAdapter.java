@@ -24,12 +24,15 @@ public class OpenAiCompatibleAdapter implements AiProviderAdapter {
 
     private final RestClient restClient;
     private final KeyVaultService keyVaultService;
+    private final String configuredApiKey;
 
     public OpenAiCompatibleAdapter(RestClient.Builder builder,
                                    KeyVaultService keyVaultService,
-                                   @Value("${app.provider.openai.base-url}") String baseUrl) {
+                                   @Value("${app.provider.openai.base-url}") String baseUrl,
+                                   @Value("${app.provider.openai.api-key:}") String configuredApiKey) {
         this.restClient = builder.baseUrl(baseUrl).build();
         this.keyVaultService = keyVaultService;
+        this.configuredApiKey = configuredApiKey;
     }
 
     @Override
@@ -42,7 +45,11 @@ public class OpenAiCompatibleAdapter implements AiProviderAdapter {
     public String chat(String appKeyRef, ChatRequest request) {
         String apiKey = keyVaultService.resolve(appKeyRef);
         if (apiKey == null || apiKey.isBlank()) {
-            throw new BizException(4001, "no api key for ref: " + appKeyRef);
+            // 没有传 appKeyRef 时回落到 yml / 环境变量里的配置
+            apiKey = configuredApiKey;
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new BizException(4001, "no api key: 既没有 appKeyRef，也没有配置 app.provider.openai.api-key");
         }
         List<Map<String, String>> messages = request.messages().stream()
                 .map(m -> Map.of("role", m.role(), "content", m.content()))

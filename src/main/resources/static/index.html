@@ -117,6 +117,16 @@
   }
   .stream-box.reasoning { color: var(--muted); font-size: 12.5px; min-height: 40px; margin-top: 8px; background: #f8fafc; }
   .meta { margin-top: 10px; font-size: 12px; color: var(--muted); font-family: ui-monospace, Consolas, monospace; }
+
+  .stat { flex: 1 1 150px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fbfcfe; }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat .v { font-size: 18px; font-weight: 650; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+  table.tbl th, table.tbl td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  table.tbl th { color: var(--muted); font-weight: 600; background: #fafbfc; white-space: nowrap; }
+  table.tbl td.num { text-align: right; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+  table.tbl tr:hover td { background: #fbfcfe; }
+  .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .chips button {
     font-size: 12px; padding: 4px 10px; border-radius: 20px; cursor: pointer;
@@ -153,6 +163,7 @@
     <button role="tab" data-tab="task">异步任务</button>
     <button role="tab" data-tab="publish">发布 / 并发</button>
     <button role="tab" data-tab="keys">密钥</button>
+    <button role="tab" data-tab="usage">用量与成本</button>
     <button role="tab" data-tab="system">系统</button>
   </nav>
 </header>
@@ -166,6 +177,7 @@
       <p class="hint"><span class="verb post">POST</span><code>/api/chat</code> — 由 <code>AdapterRegistry</code> 按 model 前缀选适配器。<code>mock:echo</code> 不需要 API Key。</p>
       <div class="row">
         <label>model<input id="chat-model" value="mock:echo"></label>
+        <label>userId<input id="chat-user" value="demo-user"></label>
         <label>appKeyRef（可空）<input id="chat-key" placeholder="密钥 Tab 里创建的 id"></label>
       </div>
       <div class="row">
@@ -186,6 +198,7 @@
       <p class="hint"><span class="verb get">GET</span><code>/api/chat/stream</code> — 事件名区分 <code>text</code> / <code>reasoning</code> / <code>done</code>，服务端用独立线程池推送。</p>
       <div class="row">
         <label>model<input id="sse-model" value="mock:echo"></label>
+        <label>userId<input id="sse-user" value="demo-user"></label>
         <label>appKeyRef（可空）<input id="sse-key" placeholder="密钥 Tab 里创建的 id"></label>
       </div>
       <div class="row">
@@ -349,6 +362,32 @@
     </div>
   </section>
 
+  <!-- ============ 用量与成本 ============ -->
+  <section class="panel" data-panel="usage">
+    <div class="card">
+      <h2>用量概览</h2>
+      <p class="hint"><span class="verb get">GET</span><code>/api/usage/summary</code> — 累计请求数 / token / 成本。token 与单价都是模拟值，见 <code>app.cost.pricing</code>。</p>
+      <div class="row">
+        <label>userId<input id="usage-user" value="demo-user"></label>
+        <label>limit<input id="usage-limit" value="10" inputmode="numeric"></label>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="usage-refresh">刷新</button>
+      </div>
+      <div class="row" id="usage-cards" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card">
+      <h2>成本明细（模型 × 天）</h2>
+      <div id="usage-cost"></div>
+    </div>
+
+    <div class="card">
+      <h2>最近对话流水</h2>
+      <div id="usage-logs"></div>
+    </div>
+  </section>
+
   <!-- ============ 系统 ============ -->
   <section class="panel" data-panel="system">
     <div class="card">
@@ -487,7 +526,7 @@
   $('chat-run').addEventListener('click', function () {
     run('chat-out', async function () {
       const res = await request('POST', '/api/chat', {
-        query: { model: $('chat-model').value, prompt: $('chat-prompt').value, appKeyRef: $('chat-key').value }
+        query: { model: $('chat-model').value, prompt: $('chat-prompt').value, appKeyRef: $('chat-key').value, userId: $('chat-user').value }
       });
       paint('chat-out', res, 'data 长度 ' + (typeof res.body.data === 'string' ? res.body.data.length : '-'));
     });
@@ -529,6 +568,7 @@
     const url = new URL('/api/chat/stream', location.origin);
     url.searchParams.set('model', $('sse-model').value);
     url.searchParams.set('prompt', $('sse-prompt').value);
+    url.searchParams.set('userId', $('sse-user').value);
     const key = $('sse-key').value;
     if (key) url.searchParams.set('appKeyRef', key);
 
@@ -729,6 +769,97 @@
     $('key-reader').value = $('key-owner').value;
     $('key-detail').click();
   });
+
+  /* ---------- 用量与成本 ---------- */
+  function table(containerId, columns, rows) {
+    const box = $(containerId);
+    box.textContent = '';
+    if (!rows || rows.length === 0) {
+      const p = document.createElement('div');
+      p.className = 'empty';
+      p.textContent = '暂无数据';
+      box.appendChild(p);
+      return;
+    }
+    const tbl = document.createElement('table');
+    tbl.className = 'tbl';
+    const head = document.createElement('tr');
+    columns.forEach(function (c) {
+      const th = document.createElement('th');
+      th.textContent = c.label;
+      head.appendChild(th);
+    });
+    const thead = document.createElement('thead');
+    thead.appendChild(head);
+    tbl.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    rows.forEach(function (row) {
+      const tr = document.createElement('tr');
+      columns.forEach(function (c) {
+        const td = document.createElement('td');
+        if (c.num) td.className = 'num';
+        td.textContent = c.value(row);
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    box.appendChild(tbl);
+  }
+
+  function statCard(label, value) {
+    const div = document.createElement('div');
+    div.className = 'stat';
+    const k = document.createElement('div');
+    k.className = 'k';
+    k.textContent = label;
+    const v = document.createElement('div');
+    v.className = 'v';
+    v.textContent = value;
+    div.appendChild(k);
+    div.appendChild(v);
+    return div;
+  }
+
+  async function refreshUsage() {
+    const userId = $('usage-user').value;
+    const limit = $('usage-limit').value || '10';
+    $('usage-cards').textContent = '';
+    try {
+      const summary = (await request('GET', '/api/usage/summary', { query: { userId } })).body.data;
+      $('usage-cards').appendChild(statCard('请求数', summary.requestCount));
+      $('usage-cards').appendChild(statCard('总 token', summary.totalTokens));
+      $('usage-cards').appendChild(statCard('总成本', summary.costAmount + ' ' + summary.currency));
+
+      const cost = (await request('GET', '/api/usage/cost', { query: { userId } })).body.data || [];
+      table('usage-cost', [
+        { label: '模型', value: function (r) { return r.model; } },
+        { label: '日期', value: function (r) { return r.statDate; } },
+        { label: '次数', num: true, value: function (r) { return r.requestCount; } },
+        { label: 'prompt', num: true, value: function (r) { return r.promptTokens; } },
+        { label: 'completion', num: true, value: function (r) { return r.completionTokens; } },
+        { label: '成本', num: true, value: function (r) { return r.costAmount + ' ' + r.currency; } }
+      ], cost);
+
+      const logs = (await request('GET', '/api/usage/queries', { query: { userId: userId, limit: limit } })).body.data || [];
+      table('usage-logs', [
+        { label: '#', num: true, value: function (r) { return r.id; } },
+        { label: '时间', value: function (r) { return String(r.createdAt || '').replace('T', ' ').slice(0, 19); } },
+        { label: '来源', value: function (r) { return r.source; } },
+        { label: '模型', value: function (r) { return r.model; } },
+        { label: 'prompt', value: function (r) { return String(r.prompt || '').slice(0, 40); } },
+        { label: 'token', num: true, value: function (r) { return r.totalTokens; } },
+        { label: '成本', num: true, value: function (r) { return r.costAmount; } },
+        { label: '耗时', num: true, value: function (r) { return r.latencyMs + 'ms'; } },
+        { label: '状态', value: function (r) { return r.status; } }
+      ], logs);
+    } catch (e) {
+      $('usage-cards').textContent = '加载失败：' + (e && e.message ? e.message : e);
+    }
+  }
+
+  $('usage-refresh').addEventListener('click', refreshUsage);
 
   /* ---------- 系统 ---------- */
   async function checkHealth(showBody) {

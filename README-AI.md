@@ -25,7 +25,7 @@
 |---|---|
 | 定位 | 技术验证型项目，不是产品；不做多租户、审计、限流 |
 | 技术栈 | Java 17 + Spring Boot 3.2，不降级；不引入 Lombok（保持零注解处理器依赖） |
-| 依赖面 | Spring Boot + JPA + H2 + RabbitMQ(可选)；不引入与本项目无关的中间件 |
+| 依赖面 | Spring Boot + JPA + MySQL 8（H2 作为可选 profile）+ RabbitMQ；不引入与本项目无关的中间件 |
 | 可验证 | 每个机制至少有一个可直接调用的接口，以及一个名字能当文档读的单测 |
 | 可读 | 模块间单向依赖；REST 入口只做参数绑定与响应包装；注释只写"为什么" |
 
@@ -44,6 +44,7 @@
 | 发布执行 | `publish/PublishService#scanAndClaimDue`、`PublishExecutor` | 抢占后提交执行池，按结果推进终态；卡死由 `recoverStuck` 回收 |
 | 加密 | `security/AesGcmCipher`、`KeyVaultService` | AES-GCM 密文入库、列表脱敏、读取强制校验归属 |
 | 构建发布 | `Dockerfile`、`deploy/nginx.conf`、CI | 依赖层与源码层分离；`try_files` 修 404；SSE 关缓冲 |
+| 用量与成本 | `usage/` | 对话流水 + 按「用户 × 模型 × 天」聚合；token 估算、单价可配 |
 
 更细的设计取舍与常见疑问见 [`docs/01-技术点与代码对照.md`](docs/01-技术点与代码对照.md)。
 
@@ -71,9 +72,9 @@
 
 | 项 | 状态 |
 |---|---|
-| 代码完整性 | 已完成第一版（50 个主源码 + 6 个测试类），覆盖上表全部技术点；2026-10-23 把 REST 入口统一收进 `controller/` |
-| **编译 + 启动验证** | ✅ 已完成（2026-10-24）：JDK 17 编译通过（50 主源码 + 6 测试类），应用启动成功，`/actuator/health` = UP |
-| 单元测试 | ✅ 6 个测试类、18 个用例全部通过（2026-10-24，`mvn test`：Tests run 18, Failures 0, Errors 0） |
+| 代码完整性 | 已完成第一版（63 个主源码 + 8 个测试类），覆盖上表全部技术点；REST 入口统一在 `controller/`，DTO/VO/PO 在各自模块的 `domain/` |
+| **编译 + 启动验证** | ✅ 已完成（2026-10-24）：JDK 17 编译通过（63 主源码 + 8 测试类），连 MySQL 8 启动成功，`/actuator/health` = UP |
+| 单元测试 | ✅ 8 个测试类、27 个用例全部通过（2026-10-24，`mvn test`：Tests run 27, Failures 0, Errors 0） |
 | 前端 | 单页功能测试台 `static/index.html`：按 Tab 覆盖全部接口，含并发 PASS/FAIL 判定、SSE 帧计数与已知缺口提示；无构建、无外部依赖 |
 | RabbitMQ | ✅ 已接通本地 broker（vhost `/maibao`，用户 `maibao`）：队列 `maibao.task.queue` publish=3 / deliver=3 / consumers=1，交换机 `maibao.task.exchange`(direct) 自动声明成功 |
 | 生产化 | 不做。单机运行，不涉及集群与多租户 |
@@ -87,13 +88,15 @@
 | 能力 | 验证方式 | 结果 |
 |---|---|---|
 | 应用启动 | `mvn spring-boot:run` | Started in 5.5s，Tomcat 8080 |
-| 数据库 | Hibernate DDL 自动建表 | `processed_task` / `publish_record` / `api_key` 建表成功 |
-| RabbitMQ 连接 | 启动日志 | `Created new connection: amqp://guest@127.0.0.1:5672` |
+| 数据库 | MySQL 8 + Hibernate DDL 自动建表 | 6 张表建表成功：`publish_record` / `processed_task` / `failed_task` / `api_key` / `user_query_log` / `cost_accounting` |
+| RabbitMQ 连接 | 启动日志 | `Created new connection: amqp://maibao@127.0.0.1:5672//maibao` |
 | 队列/交换机声明 | 管理台 API | `maibao.task.queue`、`maibao.task.exchange`(direct) 均存在 |
 | 异步投递 + 消费 | `POST /api/task/submit` | 返回 `async via mq`；队列 publish=3 / deliver=3 / consumers=1 |
 | 健康检查 | `GET /actuator/health` | `{"status":"UP"}` |
 | 接口冒烟（2026-10-23 复核） | `/api/chat`、`/api/workflow/run`、`/api/workflow/validate`、`/api/task/submit`、`/api/keys` | 全部 `code=0`；`/api/workflow/run` 返回 `round_executed=3` |
-| 单元测试 | `mvn test` | Tests run: 18, Failures: 0, Errors: 0 |
+| 单元测试 | `mvn test` | Tests run: 27, Failures: 0, Errors: 0 |
+| 用量埋点（2026-10-24） | `POST /api/chat` + `GET /api/usage/queries` | 同步 / 流式各写一条流水；失败调用记 `FAILED` 且成本为 0 |
+| 成本聚合（2026-10-24） | 3 次成功调用后查 `/api/usage/cost` | `mock:echo` 当天 3 次、26 token、0.000045 CNY；唯一键防重复行 |
 | 发布执行闭环（2026-10-24） | 建单 → 抢占 → 执行 → 收尾 | `SCHEDULED → PUBLISHING → SUCCESS`，执行耗时 213 ms |
 | 卡死回收（2026-10-24） | 执行耗时 5s + 卡死阈值 2s | 回收任务改为 `FAILED`；执行线程收尾拿到 0 行，日志记 `state advanced: false` |
 | MQ 生产确认（2026-10-24） | `mq.publish.confirm` 指标 | 2 次投递均 `result=ack` |

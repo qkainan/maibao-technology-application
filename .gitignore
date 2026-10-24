@@ -20,3 +20,6 @@ data/
 *.log
 logs/
 .DS_Store
+
+# 本地敏感配置（数据库密码等）
+application-local.yml
