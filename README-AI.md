@@ -39,9 +39,9 @@
 | 循环节点 | `workflow/LoopNode` | 循环变量跨轮写回、条件**轮末**求值、`maxCount` 兜底 |
 | 图校验 | `workflow/GraphValidator` | 三色标记 DFS，只返回构成环的回边（避免菱形误判） |
 | SSE 流式 | `chat/stream/SseFrameParser`、`ChunkNormalizer` | 传输分片 ≠ 事件边界，自攒 buffer 按空行切帧 |
-| RabbitMQ | `mq/` | 持久化 + 手动 ack + `processed_task` 唯一约束做幂等 |
-| 乐观锁 | `publish/PublishRepository#casStatus` | `UPDATE ... WHERE id=? AND status=旧值`，影响行数 0 = 被抢先 |
-| 抢占 | `publish/PublishService#claim`、`race` | 先查再抢，抢不到说明别人在跑；`race` 用 N 线程验证只成 1 个 |
+| RabbitMQ | `mq/` | 持久化 + 手动 ack + confirm/returns + 有限重试 + `processed_task` 唯一约束做幂等 |
+| 乐观锁 | `publish/PublishRepository#claim` | `UPDATE ... WHERE id=? AND status=旧值`，影响行数 0 = 被抢先 |
+| 发布执行 | `publish/PublishService#scanAndClaimDue`、`PublishExecutor` | 抢占后提交执行池，按结果推进终态；卡死由 `recoverStuck` 回收 |
 | 加密 | `security/AesGcmCipher`、`KeyVaultService` | AES-GCM 密文入库、列表脱敏、读取强制校验归属 |
 | 构建发布 | `Dockerfile`、`deploy/nginx.conf`、CI | 依赖层与源码层分离；`try_files` 修 404；SSE 关缓冲 |
 
@@ -71,9 +71,9 @@
 
 | 项 | 状态 |
 |---|---|
-| 代码完整性 | 已完成第一版（43 个主源码 + 4 个测试类），覆盖上表全部技术点；2026-10-23 把 REST 入口统一收进 `controller/` |
-| **编译 + 启动验证** | ✅ 已完成（2026-10-23）：JDK 17 编译通过（43 主源码 + 4 测试类），应用启动成功，`/actuator/health` = UP |
-| 单元测试 | ✅ 4 个测试类、10 个用例全部通过（2026-10-23，`mvn test`：Tests run 10, Failures 0, Errors 0） |
+| 代码完整性 | 已完成第一版（50 个主源码 + 6 个测试类），覆盖上表全部技术点；2026-10-23 把 REST 入口统一收进 `controller/` |
+| **编译 + 启动验证** | ✅ 已完成（2026-10-24）：JDK 17 编译通过（50 主源码 + 6 测试类），应用启动成功，`/actuator/health` = UP |
+| 单元测试 | ✅ 6 个测试类、18 个用例全部通过（2026-10-24，`mvn test`：Tests run 18, Failures 0, Errors 0） |
 | 前端 | 单页功能测试台 `static/index.html`：按 Tab 覆盖全部接口，含并发 PASS/FAIL 判定、SSE 帧计数与已知缺口提示；无构建、无外部依赖 |
 | RabbitMQ | ✅ 已接通本地 broker：队列 `maibao.task.queue` publish=3 / deliver=3 / consumers=1，交换机 `maibao.task.exchange`(direct) 自动声明成功 |
 | 生产化 | 不做。单机运行，不涉及集群与多租户 |
@@ -93,18 +93,20 @@
 | 异步投递 + 消费 | `POST /api/task/submit` | 返回 `async via mq`；队列 publish=3 / deliver=3 / consumers=1 |
 | 健康检查 | `GET /actuator/health` | `{"status":"UP"}` |
 | 接口冒烟（2026-10-23 复核） | `/api/chat`、`/api/workflow/run`、`/api/workflow/validate`、`/api/task/submit`、`/api/keys` | 全部 `code=0`；`/api/workflow/run` 返回 `round_executed=3` |
-| 单元测试 | `mvn test` | Tests run: 10, Failures: 0, Errors: 0 |
+| 单元测试 | `mvn test` | Tests run: 18, Failures: 0, Errors: 0 |
+| 发布执行闭环（2026-10-24） | 建单 → 抢占 → 执行 → 收尾 | `SCHEDULED → PUBLISHING → SUCCESS`，执行耗时 213 ms |
+| 卡死回收（2026-10-24） | 执行耗时 5s + 卡死阈值 2s | 回收任务改为 `FAILED`；执行线程收尾拿到 0 行，日志记 `state advanced: false` |
+| MQ 生产确认（2026-10-24） | `mq.publish.confirm` 指标 | 2 次投递均 `result=ack` |
+| MQ 有限重试 | 消费抛异常 | 带 `x-retry-count` 重新投递，超限写 `failed_task`（单测覆盖） |
 | 接口全量回归（2026-10-23） | 24 项端到端用例 | 24/24 通过（对话 / SSE / 工作流 / 任务 / 发布 / 密钥 / 健康） |
 | 无 broker 运行 | `app.mq.enabled=false` + broker 端口不可达 | 应用正常启动，`/actuator/health` = UP，任务走 inline |
 | 消费幂等 | 同一 taskId 投递两次 | 投递 2 次、消费 1 次，第二次日志 `duplicate message, ack and skip` |
 
-**未验证**：单元测试（`mvn test`）尚未在本机跑通。
-
 **已知缺口**（要么补掉，要么在文档里如实标注）：
 
-1. 发布链路只做了"扫描 + 抢占"，没有执行者：建单后 5 秒被抢占成 `PUBLISHING`，然后停在那里（实测）。
-2. SSE 的帧解析（`SseFrameParser`）与增量归一（`ChunkNormalizer`）还没接进 `/api/chat/stream`，目前只有单测在调用 —— 页面上的流式效果来自 MockAdapter 逐字符推流。
-3. `TaskConsumer` 注释里写的"生产端 confirm"并没有真的配置：`application.yml` 没有 `publisher-confirm-type`，也没有 Confirm/Returns 回调。
+1. SSE 的帧解析（`SseFrameParser`）与增量归一（`ChunkNormalizer`）还没接进 `/api/chat/stream`，目前只有单测在调用 —— 页面上的流式效果来自 MockAdapter 逐字符推流。
+2. 没有集成测试：状态机和消费重试目前靠 Mockito 单测 + 手工端到端验证，没有 `@SpringBootTest`。
+3. MQ 没有死信队列（当前用「有限重试 + 失败表」替代），也不支持延迟重试。
 
 ## 6. 改代码时的约定
 
@@ -132,12 +134,11 @@
 
 ## 8. 后续计划
 
-1. ✅ 已完成（2026-10-23）：`mvn test` 跑通，10 个用例通过。接下来是补集成测试（第 3 条）
-2. 把 `SseFrameParser` / `ChunkNormalizer` 接进 `/api/chat/stream`，让流式链路真正跑在请求链路上（见 5.1 节缺口 2）
-3. 补一个 `@SpringBootTest` 覆盖"发布状态机 + 并发抢占"的集成测试（现在只有单元测试）
-4. RabbitMQ 失败路径：生产端 confirm、消费重试、死信队列、积压处理
-5. 循环节点的**取消**能力（`CancellationToken` 或状态位 + 轮前检查）
-6. 发布链路的执行闭环：抢占之后要有人把记录推进到 `SUCCESS` / `FAILED`（见 5.1 节缺口 1）
+1. 把 `SseFrameParser` / `ChunkNormalizer` 接进 `/api/chat/stream`，让流式链路真正跑在请求链路上（见 5.1 节缺口 1）
+2. 补 `@SpringBootTest` 集成测试：状态机全流程 + 20 线程并发抢占 + 消费重试（见 5.1 节缺口 2）
+3. MQ 死信队列与延迟重试（见 5.1 节缺口 3）
+4. 循环节点的**取消**能力（`CancellationToken` 或状态位 + 轮前检查）
+5. 发布执行池的可观测性：执行耗时分布、队列积压、卡死回收次数接入指标
 
 ---
 

@@ -43,6 +43,10 @@ public class PublishRecord {
     @Column(name = "scheduled_at")
     private Instant scheduledAt;
 
+    /** 被抢占（SCHEDULED -> PUBLISHING）的时刻，用于识别卡死记录 */
+    @Column(name = "claimed_at")
+    private Instant claimedAt;
+
     @Column(name = "gray_percent", nullable = false)
     private int grayPercent;
 
@@ -79,6 +83,10 @@ public class PublishRecord {
 
     public Instant getScheduledAt() {
         return scheduledAt;
+    }
+
+    public Instant getClaimedAt() {
+        return claimedAt;
     }
 
     public int getGrayPercent() {

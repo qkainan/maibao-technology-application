@@ -32,6 +32,25 @@ public interface PublishRepository extends JpaRepository<PublishRecord, Long> {
                             @Param("to") PublishStatus to,
                             @Param("reason") String reason);
 
+    /**
+     * 抢占：改状态的同时记下抢占时刻，两者必须在同一条 UPDATE 里，
+     * 否则「状态已变但时间没写」的记录会被超时回收误判。
+     */
+    @Modifying
+    @Transactional
+    @Query("update PublishRecord p set p.status = :to, p.claimedAt = :now "
+            + "where p.id = :id and p.status = :from")
+    int claim(@Param("id") Long id,
+              @Param("from") PublishStatus from,
+              @Param("to") PublishStatus to,
+              @Param("now") Instant now);
+
+    /** 卡死扫描：PUBLISHING 且抢占时刻早于 deadline（老数据没有 claimedAt 也算卡死） */
+    @Query("select p from PublishRecord p where p.status = :status "
+            + "and (p.claimedAt is null or p.claimedAt < :deadline)")
+    List<PublishRecord> findByStatusAndClaimedAtBefore(@Param("status") PublishStatus status,
+                                                       @Param("deadline") Instant deadline);
+
     /** 仅供并发用例复位：把记录强制拉回 SCHEDULED，便于重复跑 */
     @Modifying
     @Transactional

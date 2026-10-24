@@ -267,7 +267,7 @@
   <section class="panel" data-panel="publish">
     <div class="card">
       <h2>创建 / 查看发布记录</h2>
-      <p class="hint"><span class="verb post">POST</span><code>/api/publish</code> · <span class="verb get">GET</span><code>/api/publish/{id}</code> — 立即发布也先落成 <code>SCHEDULED</code>，由扫描器统一认领。</p>
+      <p class="hint"><span class="verb post">POST</span><code>/api/publish</code> · <span class="verb get">GET</span><code>/api/publish/{id}</code> — 立即发布也先落成 <code>SCHEDULED</code>，由扫描器统一认领并提交执行。</p>
       <div class="row">
         <label>nodeId<input id="pub-node" value="node-1"></label>
         <label>delaySeconds（可空）<input id="pub-delay" placeholder="留空 = 立即"></label>
@@ -309,7 +309,8 @@
     </div>
 
     <p class="hint" style="margin-top:12px">
-      已知缺口：定时扫描每 5 秒跑一次，会把到期的 <code>SCHEDULED</code> 抢成 <code>PUBLISHING</code>，但目前没有执行者把它推进到终态 —— 记录会停在那里，这是实现现状，不是测试台的问题。
+      执行链路：扫描器每 5 秒把到期的 <code>SCHEDULED</code> 抢成 <code>PUBLISHING</code>，提交到执行线程池，跑完推进 <code>SUCCESS</code> / <code>FAILED</code>。
+      卡在 <code>PUBLISHING</code> 超过 <code>app.publish.stuck-timeout-seconds</code>（默认 60s）会被回收任务标记为 <code>FAILED</code>，不会永久卡住。
     </p>
   </section>
 

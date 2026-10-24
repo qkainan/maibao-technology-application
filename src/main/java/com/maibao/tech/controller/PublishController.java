@@ -49,11 +49,11 @@ public class PublishController {
         return ApiResponse.ok(publishService.claim(id));
     }
 
+    /** 收尾；返回 false 表示记录已不在 PUBLISHING（重复收尾或已被超时回收） */
     @PostMapping("/{id}/finish")
-    public ApiResponse<String> finish(@PathVariable Long id, @RequestParam boolean success,
-                                     @RequestParam(required = false) String reason) {
-        publishService.finish(id, success, reason);
-        return ApiResponse.ok("done");
+    public ApiResponse<Boolean> finish(@PathVariable Long id, @RequestParam boolean success,
+                                       @RequestParam(required = false) String reason) {
+        return ApiResponse.ok(publishService.finish(id, success, reason));
     }
 
     /** 并发验证：返回成功抢占的线程数，正确值是 1 */

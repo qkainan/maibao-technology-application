@@ -45,7 +45,8 @@ mvn spring-boot:run
 | POST | `/api/workflow/run` | 跑一个「LLM 节点 + 循环 3 轮」的工作流 |
 | POST | `/api/workflow/validate` | 图校验：传邻接表，返回环上的边 |
 | POST | `/api/task/submit?payload=...` | 提交异步任务（MQ 开启走队列，关闭时同步执行） |
-| POST | `/api/publish?nodeId=n1&delaySeconds=10` | 建定时发布记录 |
+| POST | `/api/publish?nodeId=n1&delaySeconds=10` | 建定时发布记录；到点后自动抢占并执行 |
+| POST | `/api/publish/{id}/finish?success=true` | 手动收尾；返回 `false` 表示记录已不在 `PUBLISHING` |
 | POST | `/api/publish/{id}/race?threads=20` | **并发验证**：20 线程抢一条，应返回 1 |
 | POST | `/api/keys?...` | 写入密钥（密文入库，返回脱敏串） |
 | GET | `/api/keys/{id}?ownerId=other` | **越权校验**：返回 4030 |
@@ -74,6 +75,16 @@ docker run -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 
 没有 broker 时把它改成 `false`，`TaskDispatcher` 会自动降级为同步执行（`InlineTaskDispatcher`），接口行为不变；`/actuator/health` 也不会因为 broker 不可达而变 DOWN。
 
+可靠性相关的几层：
+
+| 环节 | 做法 |
+|---|---|
+| 生产端 | `publisher-confirm-type: correlated` + `publisher-returns`，未确认/未路由的消息记 error 并计数 |
+| 投递 | 消息持久化 + 队列持久化 |
+| 消费 | 手动 ack；失败时带 `x-retry-count` 头重新投递，最多 `app.mq.max-retries`（默认 3）次 |
+| 兜底 | 重试耗尽写 `failed_task` 表并 nack，不把毒消息留在队列里 |
+| 幂等 | `processed_task` 的唯一约束；去重记录与业务动作在同一个事务里，失败会一起回滚，重试才有机会重跑 |
+
 ---
 
 ## 日志
@@ -99,8 +110,8 @@ src/main/java/com/maibao/tech/
 ├── adapter/      适配器模式：多厂商模型统一出入参
 ├── chat/         对话服务 + SSE（含帧解析、增量归一）
 ├── workflow/     节点模型、循环节点、图校验
-├── mq/           RabbitMQ 生产/消费、消费幂等
-├── publish/      发布状态机、乐观锁抢占、并发验证
+├── mq/           RabbitMQ 生产/消费、确认与重试、失败落表
+├── publish/      发布状态机、执行器、乐观锁抢占与超时回收
 ├── security/     AES-GCM 加密、密钥归属校验
 ├── config/       线程池等基础配置
 └── common/       统一响应、异常处理
@@ -114,13 +125,15 @@ src/main/java/com/maibao/tech/
 mvn test
 ```
 
-10 个用例全部通过（2026-10-23）。
+18 个用例全部通过（2026-10-24）。
 
 覆盖的关键点：
 - `SseFrameParserTest` — 半包 / 粘包 / 多帧切分
 - `LoopNodeTest` — 终止条件、轮次上限、非法参数
 - `ChunkNormalizerTest` — OpenAI delta / result / reasoning_content 归一
 - `AesGcmCipherTest` — 加解密往返 + 脱敏
+- `PublishServiceTest` — 只对抢到的记录提交执行、成功/失败收尾、收尾落空、卡死回收
+- `TaskConsumerTest` — 重复消息 ack 跳过、失败重投（重试次数 +1）、重试耗尽落失败表
 
 ---
 

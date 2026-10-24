@@ -1,14 +1,21 @@
 package com.maibao.tech.publish;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 到点扫描。真实项目里这类定时触发通常由 XXL-Job 一类调度系统承担，这里用 Spring 定时任务
- * 等价实现"执行器"角色：定时只是触发器，不是状态源。
+ * 定时触发器：只负责按节奏调用，不持有状态。
+ *
+ * <p>两个职责分开：scan 负责「到点的记录抢占并提交执行」，
+ * recover 负责「把卡在 PUBLISHING 的记录标记为失败」。没有 recover，
+ * 执行线程意外退出后记录会永久停在中间态。</p>
  */
 @Component
 public class PublishScheduler {
+
+    private static final Logger log = LoggerFactory.getLogger(PublishScheduler.class);
 
     private final PublishService publishService;
 
@@ -16,8 +23,16 @@ public class PublishScheduler {
         this.publishService = publishService;
     }
 
-    @Scheduled(fixedDelay = 5000, initialDelay = 5000)
+    @Scheduled(fixedDelayString = "${app.publish.scan-interval-ms:5000}", initialDelay = 5000)
     public void scan() {
         publishService.scanAndClaimDue();
+    }
+
+    @Scheduled(fixedDelayString = "${app.publish.recovery-interval-ms:30000}", initialDelay = 10000)
+    public void recover() {
+        int recovered = publishService.recoverStuck();
+        if (recovered > 0) {
+            log.warn("recovered {} stuck publish records", recovered);
+        }
     }
 }
