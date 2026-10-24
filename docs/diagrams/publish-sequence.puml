@@ -1,0 +1,60 @@
+@startuml publish-sequence
+title 发布链路：抢占 → 执行 → 收尾 / 回收\n(括号内为运行时线程名)
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam shadowing false
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+autonumber
+
+actor 客户端
+participant "PublishController" as CT
+participant "PublishService" as S
+database "publish_record\n(H2)" as DB
+participant "PublishScheduler\n(scheduling-1)" as SCH
+participant "PublishExecutor\n(publish-exec-N)" as EX
+participant "PublishHandler" as H
+
+== ① 建单 ==
+客户端 -> CT : POST /api/publish?nodeId&delaySeconds
+CT -> S : create(nodeId, scheduledAt)
+S -> DB : INSERT status=SCHEDULED
+DB --> S : id
+S --> CT : record
+CT --> 客户端 : {id, status=SCHEDULED}
+
+== ② 扫描并抢占（每 5s）==
+SCH -> S : scanAndClaimDue()
+S -> DB : SELECT ... WHERE status=SCHEDULED\nAND scheduled_at <= now
+DB --> S : 到期记录
+loop 每条到期记录
+  S -> DB : UPDATE SET status=PUBLISHING, claimed_at=now\nWHERE id=? AND status=SCHEDULED
+  DB --> S : 影响行数
+  alt 影响行数 = 1（抢到）
+    S -> EX : submit(execute(id))
+  else 影响行数 = 0（被别人抢先）
+    note right of S : 直接跳过
+  end
+end
+
+== ③ 执行与收尾（publish-exec-N）==
+EX -> S : execute(id)
+S -> DB : SELECT id=?
+DB --> S : record
+S -> H : publish(record)
+H --> S : 正常返回 / 抛异常
+alt 成功
+  S -> DB : UPDATE SET status=SUCCESS\nWHERE id=? AND status=PUBLISHING
+  note right of S : state advanced: true
+else 抛异常
+  S -> DB : UPDATE SET status=FAILED, fail_reason=?\nWHERE id=? AND status=PUBLISHING
+end
+
+== ④ 卡死回收（每 30s）==
+SCH -> S : recoverStuck()
+S -> DB : SELECT ... WHERE status=PUBLISHING\nAND claimed_at < now - timeout
+DB --> S : 卡死记录
+S -> DB : UPDATE SET status=FAILED, fail_reason='stuck ...'\nWHERE id=? AND status=PUBLISHING
+note over S : 若执行线程这时才收尾，UPDATE 影响 0 行\n→ state advanced: false（不会覆盖 FAILED）
+
+@enduml
