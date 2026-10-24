@@ -18,46 +18,38 @@ participant "MeterRegistry" as M
 
 客户端 -> TC : POST /api/task/submit?payload&taskId
 TC -> D : dispatch(TaskMessage)
+D -> RT : convertAndSend(persistent, mandatory)
+RT -> MQ : publish
+MQ --> RT : confirm(ack / nack)
+RT -> M : mq.publish.confirm{result}
+note right of RT : nack 或不可路由时记 error
+TC --> 客户端 : taskId
 
-alt app.mq.enabled = true（异步）
-  D -> RT : convertAndSend(persistent, mandatory)
-  RT -> MQ : publish
-  MQ --> RT : confirm(ack / nack)
-  RT -> M : mq.publish.confirm{result}
-  note right of RT : nack 或不可路由时记 error
-  TC --> 客户端 : "taskId (async via mq)"
-
-  MQ -> CS : deliver（手动 ack）
-  CS -> CS : attempt = header[x-retry-count] 或 0
-  CS -> TP : process(message)  @Transactional
-  TP -> DB : INSERT processed_task(task_id)  唯一约束
-  alt 处理成功
-    TP --> CS : commit
-    CS -> MQ : basicAck
-    CS -> M : mq.consume.success
-  else 唯一约束冲突（重复投递）
-    DB --> TP : DataIntegrityViolationException
-    TP --> CS : 抛出
-    CS -> MQ : basicAck（跳过）
-    CS -> M : mq.consume.duplicate
-  else 业务抛异常
-    TP --> CS : 回滚（去重记录一并撤销）
-    alt attempt < max-retries
-      CS -> RT : republish(x-retry-count = attempt+1)
-      RT -> MQ : publish
-      CS -> MQ : basicAck（原消息）
-      CS -> M : mq.consume.retry
-    else attempt >= max-retries
-      CS -> DB : INSERT failed_task(reason, attempts)
-      CS -> MQ : basicNack(requeue=false)
-      CS -> M : mq.consume.failed
-    end
+MQ -> CS : deliver（手动 ack）
+CS -> CS : attempt = header[x-retry-count] 或 0
+CS -> TP : process(message)  @Transactional
+TP -> DB : INSERT processed_task(task_id)  唯一约束
+alt 处理成功
+  TP --> CS : commit
+  CS -> MQ : basicAck
+  CS -> M : mq.consume.success
+else 唯一约束冲突（重复投递）
+  DB --> TP : DataIntegrityViolationException
+  TP --> CS : 抛出
+  CS -> MQ : basicAck（跳过）
+  CS -> M : mq.consume.duplicate
+else 业务抛异常
+  TP --> CS : 回滚（去重记录一并撤销）
+  alt attempt < max-retries
+    CS -> RT : republish(x-retry-count = attempt+1)
+    RT -> MQ : publish
+    CS -> MQ : basicAck（原消息）
+    CS -> M : mq.consume.retry
+  else attempt >= max-retries
+    CS -> DB : INSERT failed_task(reason, attempts)
+    CS -> MQ : basicNack(requeue=false)
+    CS -> M : mq.consume.failed
   end
-
-else app.mq.enabled = false（同步降级）
-  D -> TP : process(message)  @Transactional
-  TP -> DB : INSERT processed_task + 业务
-  TC --> 客户端 : "taskId (inline, mq disabled)"
 end
 
 @enduml

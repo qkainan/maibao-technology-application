@@ -9,7 +9,6 @@ import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
@@ -25,7 +24,6 @@ import io.micrometer.core.instrument.MeterRegistry;
  * {@code failed_task} 再丢弃，避免毒消息把队列堵死。</p>
  */
 @Component
-@ConditionalOnProperty(prefix = "app.mq", name = "enabled", havingValue = "true")
 public class TaskConsumer {
 
     /** 重试次数放在消息头里，消息重新投递后仍然有效 */

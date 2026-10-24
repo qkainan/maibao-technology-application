@@ -25,7 +25,7 @@ public class TaskController {
     public ApiResponse<String> submit(@RequestParam String payload,
                                       @RequestParam(required = false) String taskId) {
         String id = taskId == null ? UUID.randomUUID().toString() : taskId;
-        boolean async = dispatcher.dispatch(TaskMessage.of(id, payload));
-        return ApiResponse.ok(id + (async ? " (async via mq)" : " (inline, mq disabled)"));
+        dispatcher.dispatch(TaskMessage.of(id, payload));
+        return ApiResponse.ok(id);
     }
 }

@@ -29,7 +29,7 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 ## 快速开始
 
 ```bash
-# 1. 跑起来（默认走 RabbitMQ；本地没有 broker 就把 app.mq.enabled 改成 false）
+# 1. 跑起来（需要本地 RabbitMQ，见「RabbitMQ」一节）
 mvn spring-boot:run
 
 # 2. 打开功能测试台（按 Tab 覆盖全部接口）
@@ -44,7 +44,7 @@ mvn spring-boot:run
 | GET | `/api/chat/stream?prompt=...` | **SSE 流式**（浏览器直接打开看） |
 | POST | `/api/workflow/run` | 跑一个「LLM 节点 + 循环 3 轮」的工作流 |
 | POST | `/api/workflow/validate` | 图校验：传邻接表，返回环上的边 |
-| POST | `/api/task/submit?payload=...` | 提交异步任务（MQ 开启走队列，关闭时同步执行） |
+| POST | `/api/task/submit?payload=...` | 提交异步任务（投递到 RabbitMQ，返回 taskId） |
 | POST | `/api/publish?nodeId=n1&delaySeconds=10` | 建定时发布记录；到点后自动抢占并执行 |
 | POST | `/api/publish/{id}/finish?success=true` | 手动收尾；返回 `false` 表示记录已不在 `PUBLISHING` |
 | POST | `/api/publish/{id}/race?threads=20` | **并发验证**：20 线程抢一条，应返回 1 |
@@ -65,9 +65,9 @@ mvn spring-boot:run
 `publish_record` 上已声明联合索引 `idx_status_scheduled_at (status, scheduled_at)`，
 对应"按 status + scheduled_at 扫到期任务"的查询，可以拿它验证执行计划。
 
-### RabbitMQ（默认开启）
+### RabbitMQ（必需）
 
-`application.yml` 里默认是 `app.mq.enabled: true`。需要本地有 RabbitMQ：
+异步任务链路没有同步降级：投递失败就是失败，不会悄悄改成同步执行。所以本地需要 RabbitMQ：
 
 ```bash
 docker run -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:3-management
@@ -83,7 +83,7 @@ rabbitmqctl set_permissions -p /maibao maibao ".*" ".*" ".*"
 
 管理台等价操作见 [docs/03-本地安装RabbitMQ.md](docs/03-本地安装RabbitMQ.md#L113)。
 
-没有 broker 时把它改成 `false`，`TaskDispatcher` 会自动降级为同步执行（`InlineTaskDispatcher`），接口行为不变；`/actuator/health` 也不会因为 broker 不可达而变 DOWN。
+broker 不可用时应用仍能启动（监听容器会在后台重连），但 `/api/task/submit` 会直接返回错误，`/actuator/health` 也会变 DOWN——这是预期信号，不是待修的 bug。
 
 可靠性相关的几层：
 

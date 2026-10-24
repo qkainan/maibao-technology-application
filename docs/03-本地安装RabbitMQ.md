@@ -1,7 +1,6 @@
 # 本地安装 RabbitMQ（Windows）
 
-> 本项目默认 `app.mq.enabled: true`，所以需要本地有 broker。不装也能跑 —— 把它改成 `false`，
-> `TaskDispatcher` 会自动降级成 `InlineTaskDispatcher`（同步执行），接口行为不变。
+> 异步任务链路**没有同步降级**：投递失败就是失败，不会悄悄改成同步执行，所以必须先在本地装好 broker。
 >
 > 官方文档：[Installing on Windows Manually](https://www.rabbitmq.com/docs/install-windows-manual)
 
@@ -124,7 +123,7 @@ rabbitmqctl set_permissions -p /maibao maibao ".*" ".*" ".*"
 
 管理台建：`Admin → Virtual Hosts → Add a new virtual host`，Name 填 `/maibao`；再到 `Users` 建 `maibao`，在该用户上 `Set permission` 选 `/maibao`，三个正则都填 `.*`。
 
-> 不建 vhost 也不会挡住应用启动（应用照常起来），但交换机/队列声明会失败、消费者注册不上，表现为 `async via mq` 之后没有 `handle task` 日志。
+> 不建 vhost 也不会挡住应用启动（应用照常起来），但交换机/队列声明会失败、消费者注册不上，表现为接口返回 taskId 之后没有 `handle task` 日志。
 
 ---
 
@@ -140,7 +139,7 @@ mvn spring-boot:run
 ```powershell
 # 提交一条异步任务
 Invoke-RestMethod -Method Post "http://localhost:8080/api/task/submit?payload=hello"
-# 返回 taskId + " (async via mq)"
+# 返回 taskId
 ```
 
 然后看：
@@ -176,18 +175,12 @@ rabbitmq-service.bat remove
 
 ---
 
-## 10. 不想装怎么办
+## 10. 没有 broker 时会怎样
 
-把 `src/main/resources/application.yml` 里的
+应用**仍然能启动**（监听容器会在后台重连），但：
 
-```yaml
-app:
-  mq:
-    enabled: true
-```
+- `/api/task/submit` 投递失败，返回 500；
+- `/actuator/health` 变 DOWN（Rabbit 健康检查失败）；
+- 日志里会出现连接失败的重试记录。
 
-改成 `false`，重启即可。此时走 `InlineTaskDispatcher`：同步执行 + 用 `processed_task` 表去重，
-**接口与返回语义不变**，只是没有真正的异步链路。
-
-要用异步链路，建议装 —— 因为"生产端持久化 + 消费端手动 ack + 唯一约束幂等"这三件事，
-只有在真 broker 上跑起来才看得出来。
+这是预期行为：异步链路不降级，缺 broker 就是缺依赖。要用异步任务，先把 broker 装好并建好 vhost（见第 6 节）。

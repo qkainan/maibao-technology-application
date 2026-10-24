@@ -244,7 +244,7 @@
   <section class="panel" data-panel="task">
     <div class="card">
       <h2>提交异步任务</h2>
-      <p class="hint"><span class="verb post">POST</span><code>/api/task/submit</code> — <code>app.mq.enabled=true</code> 时走 RabbitMQ，否则降级为同步执行（返回值里带 <code>inline</code>）。</p>
+      <p class="hint"><span class="verb post">POST</span><code>/api/task/submit</code> — 投递到 RabbitMQ，由消费者手动 ack；投递失败时接口直接报错，不做同步降级。</p>
       <div class="row">
         <label class="grow">payload<textarea id="task-payload" rows="2">hello from console</textarea></label>
       </div>
@@ -596,7 +596,7 @@
   $('task-run').addEventListener('click', function () {
     run('task-out', async function () {
       const res = await submitTask('task-out', $('task-id').value.trim());
-      paint('task-out', res, '返回串里的 async / inline 表示实际走的链路');
+      paint('task-out', res, '返回 taskId；消费结果看服务端日志或队列指标');
     });
   });
 

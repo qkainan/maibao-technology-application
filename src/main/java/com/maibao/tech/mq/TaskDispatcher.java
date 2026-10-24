@@ -1,7 +1,12 @@
 package com.maibao.tech.mq;
 
+/**
+ * 任务投递的唯一出口。
+ *
+ * <p>异步是设计的一部分，不存在「同步降级」分支：投递失败就抛 {@code AmqpException}，
+ * 让调用方看到明确的错误，而不是悄悄改成同步执行、把可靠性问题藏起来。</p>
+ */
 public interface TaskDispatcher {
 
-    /** @return 是否走了真正的异步链路 */
-    boolean dispatch(TaskMessage message);
+    void dispatch(TaskMessage message);
 }

@@ -53,15 +53,9 @@ management:
     web:
       exposure:
         include: health,info,metrics
-  health:
-    rabbit:
-      # app.mq.enabled=false 时应用并不依赖 broker，健康检查不应因 broker 不可达而整体 DOWN
-      enabled: ${app.mq.enabled}
 
 app:
-  # 默认走真实异步链路；本机没有 RabbitMQ 时改成 false，会自动降级为同步执行
   mq:
-    enabled: true
     exchange: maibao.task.exchange
     queue: maibao.task.queue
     routing-key: maibao.task

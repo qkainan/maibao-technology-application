@@ -10,14 +10,12 @@ import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.amqp.RabbitTemplateCustomizer;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import io.micrometer.core.instrument.MeterRegistry;
 
 @Configuration
-@ConditionalOnProperty(prefix = "app.mq", name = "enabled", havingValue = "true")
 public class RabbitConfig {
 
     private static final Logger log = LoggerFactory.getLogger(RabbitConfig.class);

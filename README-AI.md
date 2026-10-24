@@ -99,7 +99,6 @@
 | MQ 生产确认（2026-10-24） | `mq.publish.confirm` 指标 | 2 次投递均 `result=ack` |
 | MQ 有限重试 | 消费抛异常 | 带 `x-retry-count` 重新投递，超限写 `failed_task`（单测覆盖） |
 | 接口全量回归（2026-10-23） | 24 项端到端用例 | 24/24 通过（对话 / SSE / 工作流 / 任务 / 发布 / 密钥 / 健康） |
-| 无 broker 运行 | `app.mq.enabled=false` + broker 端口不可达 | 应用正常启动，`/actuator/health` = UP，任务走 inline |
 | 消费幂等 | 同一 taskId 投递两次 | 投递 2 次、消费 1 次，第二次日志 `duplicate message, ack and skip` |
 
 **已知缺口**（要么补掉，要么在文档里如实标注）：
