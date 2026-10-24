@@ -34,8 +34,10 @@ spring:
   rabbitmq:
     host: localhost
     port: 5672
-    username: guest
-    password: guest
+    username: maibao
+    password: maibao
+    # 独立 vhost；注意名字本身带前导斜杠，不是 maibao
+    virtual-host: /maibao
     # 生产端可靠性：确认回调 + 未路由消息退回
     publisher-confirm-type: correlated
     publisher-returns: true

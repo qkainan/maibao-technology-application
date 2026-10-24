@@ -73,6 +73,16 @@ mvn spring-boot:run
 docker run -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 ```
 
+项目连的是**独立 vhost `/maibao`**、用户 `maibao`（vhost 名字带前导斜杠）。新环境要先建好并授权，否则队列声明会失败：
+
+```bash
+rabbitmqctl add_vhost /maibao
+rabbitmqctl add_user maibao maibao
+rabbitmqctl set_permissions -p /maibao maibao ".*" ".*" ".*"
+```
+
+管理台等价操作见 [docs/03-本地安装RabbitMQ.md](docs/03-本地安装RabbitMQ.md#L113)。
+
 没有 broker 时把它改成 `false`，`TaskDispatcher` 会自动降级为同步执行（`InlineTaskDispatcher`），接口行为不变；`/actuator/health` 也不会因为 broker 不可达而变 DOWN。
 
 可靠性相关的几层：

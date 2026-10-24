@@ -110,7 +110,25 @@ Start-Process http://localhost:15672
 
 ---
 
-## 6. 在本项目里验证链路
+## 6. 创建 vhost 与用户（本项目默认用独立 vhost）
+
+项目默认连接 **vhost `/maibao`**、用户 `maibao`（见 `application.yml`）。注意 vhost 名字本身带前导斜杠，不是 `maibao`。
+
+命令行建（管理员权限的终端）：
+
+```powershell
+rabbitmqctl add_vhost /maibao
+rabbitmqctl add_user maibao maibao
+rabbitmqctl set_permissions -p /maibao maibao ".*" ".*" ".*"
+```
+
+管理台建：`Admin → Virtual Hosts → Add a new virtual host`，Name 填 `/maibao`；再到 `Users` 建 `maibao`，在该用户上 `Set permission` 选 `/maibao`，三个正则都填 `.*`。
+
+> 不建 vhost 也不会挡住应用启动（应用照常起来），但交换机/队列声明会失败、消费者注册不上，表现为 `async via mq` 之后没有 `handle task` 日志。
+
+---
+
+## 7. 在本项目里验证链路
 
 ```powershell
 # 启动应用
@@ -133,7 +151,7 @@ Invoke-RestMethod -Method Post "http://localhost:8080/api/task/submit?payload=he
 
 ---
 
-## 7. 常见坑
+## 8. 常见坑
 
 | 现象 | 原因 / 处理 |
 |---|---|
@@ -146,7 +164,7 @@ Invoke-RestMethod -Method Post "http://localhost:8080/api/task/submit?payload=he
 
 ---
 
-## 8. 卸载 / 重装
+## 9. 卸载 / 重装
 
 ```powershell
 # 管理员
@@ -158,7 +176,7 @@ rabbitmq-service.bat remove
 
 ---
 
-## 9. 不想装怎么办
+## 10. 不想装怎么办
 
 把 `src/main/resources/application.yml` 里的
 

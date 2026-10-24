@@ -75,7 +75,7 @@
 | **编译 + 启动验证** | ✅ 已完成（2026-10-24）：JDK 17 编译通过（50 主源码 + 6 测试类），应用启动成功，`/actuator/health` = UP |
 | 单元测试 | ✅ 6 个测试类、18 个用例全部通过（2026-10-24，`mvn test`：Tests run 18, Failures 0, Errors 0） |
 | 前端 | 单页功能测试台 `static/index.html`：按 Tab 覆盖全部接口，含并发 PASS/FAIL 判定、SSE 帧计数与已知缺口提示；无构建、无外部依赖 |
-| RabbitMQ | ✅ 已接通本地 broker：队列 `maibao.task.queue` publish=3 / deliver=3 / consumers=1，交换机 `maibao.task.exchange`(direct) 自动声明成功 |
+| RabbitMQ | ✅ 已接通本地 broker（vhost `/maibao`，用户 `maibao`）：队列 `maibao.task.queue` publish=3 / deliver=3 / consumers=1，交换机 `maibao.task.exchange`(direct) 自动声明成功 |
 | 生产化 | 不做。单机运行，不涉及集群与多租户 |
 
 ---
