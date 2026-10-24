@@ -1,4 +1,4 @@
-package com.maibao.tech.publish;
+package com.maibao.tech.publish.domain;
 
 import java.time.Instant;
 

@@ -21,6 +21,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import com.rabbitmq.client.Channel;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.maibao.tech.mq.domain.FailedTask;
+import com.maibao.tech.mq.domain.TaskMessage;
 
 @ExtendWith(MockitoExtension.class)
 class TaskConsumerTest {

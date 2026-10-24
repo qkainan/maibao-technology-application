@@ -118,6 +118,7 @@
 7. 注释只写"为什么"，不写"是什么"。示例：
    - ✅ `// 传输分片不等于事件边界，必须自攒 buffer`
    - ❌ `// 把 chunk 追加到 buffer`
+8. **DTO / VO / PO 放对应模块的 `domain/` 子包**（`adapter/domain`、`mq/domain`、`publish/domain`、`security/domain`、`common/domain`）；service、repository、executor、scheduler 等逻辑仍留在模块根包。新增数据载体时按这个规则放，不要散在模块根包。
 
 ---
 

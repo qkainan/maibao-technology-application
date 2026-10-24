@@ -1,6 +1,8 @@
 package com.maibao.tech.adapter;
 
 import java.util.function.Consumer;
+import com.maibao.tech.adapter.domain.ChatChunk;
+import com.maibao.tech.adapter.domain.ChatRequest;
 
 /**
  * 适配器接口。每个厂商实现自己的协议差异，上层只调用这里。

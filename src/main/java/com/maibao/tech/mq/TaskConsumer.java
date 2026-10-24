@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component;
 import com.rabbitmq.client.Channel;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import com.maibao.tech.mq.domain.FailedTask;
+import com.maibao.tech.mq.domain.TaskMessage;
 
 /**
  * 消费者：手动 ack + 有限重试 + 失败落表。

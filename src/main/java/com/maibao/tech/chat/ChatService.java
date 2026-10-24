@@ -7,9 +7,12 @@ import org.springframework.stereotype.Service;
 
 import com.maibao.tech.adapter.AdapterRegistry;
 import com.maibao.tech.adapter.AiProviderAdapter;
-import com.maibao.tech.adapter.ChatChunk;
-import com.maibao.tech.adapter.ChatMessage;
-import com.maibao.tech.adapter.ChatRequest;
+
+
+import com.maibao.tech.adapter.domain.ChatChunk;
+import com.maibao.tech.adapter.domain.ChatMessage;
+import com.maibao.tech.adapter.domain.ChatRequest;
+
 
 @Service
 public class ChatService {

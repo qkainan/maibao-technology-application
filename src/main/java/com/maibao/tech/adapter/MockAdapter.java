@@ -3,6 +3,8 @@ package com.maibao.tech.adapter;
 import java.util.function.Consumer;
 
 import org.springframework.stereotype.Component;
+import com.maibao.tech.adapter.domain.ChatChunk;
+import com.maibao.tech.adapter.domain.ChatRequest;
 
 /** 无 key 时的兜底适配器，同时用于单测。 */
 @Component

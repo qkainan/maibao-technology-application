@@ -1,4 +1,4 @@
-package com.maibao.tech.security;
+package com.maibao.tech.security.domain;
 
 import java.time.Instant;
 

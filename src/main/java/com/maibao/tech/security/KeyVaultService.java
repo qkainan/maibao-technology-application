@@ -6,6 +6,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 import com.maibao.tech.common.BizException;
+import com.maibao.tech.security.domain.ApiKeyEntity;
 
 /**
  * 密钥服务：写入加密、读出脱敏、使用前校验归属。

@@ -11,9 +11,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import com.maibao.tech.adapter.ChatChunk;
+
+import com.maibao.tech.adapter.domain.ChatChunk;
 import com.maibao.tech.chat.ChatService;
-import com.maibao.tech.common.ApiResponse;
+
+import com.maibao.tech.common.domain.ApiResponse;
 import com.maibao.tech.config.ExecutorConfig;
 
 @RestController

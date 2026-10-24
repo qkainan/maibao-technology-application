@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.maibao.tech.chat.ChatService;
-import com.maibao.tech.common.ApiResponse;
+
+import com.maibao.tech.common.domain.ApiResponse;
 import com.maibao.tech.workflow.GraphValidator;
 import com.maibao.tech.workflow.LlmNode;
 import com.maibao.tech.workflow.LoopNode;

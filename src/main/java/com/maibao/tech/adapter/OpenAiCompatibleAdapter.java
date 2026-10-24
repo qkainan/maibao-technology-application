@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import com.maibao.tech.adapter.domain.ChatChunk;
+import com.maibao.tech.adapter.domain.ChatRequest;
 import com.maibao.tech.common.BizException;
 import com.maibao.tech.security.KeyVaultService;
 

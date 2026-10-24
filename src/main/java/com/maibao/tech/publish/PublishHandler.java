@@ -1,5 +1,7 @@
 package com.maibao.tech.publish;
 
+import com.maibao.tech.publish.domain.PublishRecord;
+
 /**
  * 发布动作本身。
  *

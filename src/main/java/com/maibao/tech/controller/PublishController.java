@@ -10,10 +10,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.maibao.tech.common.ApiResponse;
+
 import com.maibao.tech.common.BizException;
-import com.maibao.tech.publish.PublishRecord;
+
+import com.maibao.tech.common.domain.ApiResponse;
 import com.maibao.tech.publish.PublishService;
+import com.maibao.tech.publish.domain.PublishRecord;
 
 @RestController
 @RequestMapping("/api/publish")

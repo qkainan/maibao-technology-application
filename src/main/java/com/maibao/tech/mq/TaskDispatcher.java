@@ -1,5 +1,7 @@
 package com.maibao.tech.mq;
 
+import com.maibao.tech.mq.domain.TaskMessage;
+
 /**
  * 任务投递的唯一出口。
  *

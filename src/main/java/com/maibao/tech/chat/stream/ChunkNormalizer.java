@@ -3,8 +3,9 @@ package com.maibao.tech.chat.stream;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
+import com.maibao.tech.adapter.domain.ChatChunk;
 
-import com.maibao.tech.adapter.ChatChunk;
+
 
 /**
  * 增量归一：不同厂商的字段名与结构不同，这里统一成 ChatChunk。

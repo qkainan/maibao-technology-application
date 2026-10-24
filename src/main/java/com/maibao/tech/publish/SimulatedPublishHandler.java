@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import com.maibao.tech.publish.domain.PublishRecord;
 
 /**
  * 默认的发布实现：记录日志并模拟耗时。

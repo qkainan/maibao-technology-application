@@ -1,4 +1,4 @@
-package com.maibao.tech.common;
+package com.maibao.tech.common.domain;
 
 /** 统一响应包装。错误码用业务码而不是 HTTP 状态码，方便前端判断。 */
 public record ApiResponse<T>(int code, String message, T data) {

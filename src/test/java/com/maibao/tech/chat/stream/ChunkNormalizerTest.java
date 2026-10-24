@@ -6,8 +6,9 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import com.maibao.tech.adapter.domain.ChatChunk;
 
-import com.maibao.tech.adapter.ChatChunk;
+
 
 class ChunkNormalizerTest {
 

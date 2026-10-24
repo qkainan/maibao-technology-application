@@ -127,6 +127,16 @@ src/main/java/com/maibao/tech/
 └── common/       统一响应、异常处理
 ```
 
+**DTO / VO / PO 按模块分开放**，各自的 `domain/` 子包里只有数据载体，逻辑仍在模块根包：
+
+| 模块 | `domain/` 内容 |
+|---|---|
+| `adapter/domain` | `ChatRequest`、`ChatMessage`、`ChatChunk`（统一出入参） |
+| `mq/domain` | `TaskMessage`（消息体）、`ProcessedTask`、`FailedTask`（PO） |
+| `publish/domain` | `PublishRecord`（PO）、`PublishStatus`（枚举） |
+| `security/domain` | `ApiKeyEntity`（PO） |
+| `common/domain` | `ApiResponse`（统一响应 VO） |
+
 ---
 
 ## 测试

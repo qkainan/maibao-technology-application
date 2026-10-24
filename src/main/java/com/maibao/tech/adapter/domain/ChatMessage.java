@@ -1,4 +1,4 @@
-package com.maibao.tech.adapter;
+package com.maibao.tech.adapter.domain;
 
 public record ChatMessage(String role, String content) {
 

@@ -1,4 +1,4 @@
-package com.maibao.tech.adapter;
+package com.maibao.tech.adapter.domain;
 
 /**
  * 统一出参（流式增量）。

@@ -6,6 +6,7 @@ import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import com.maibao.tech.mq.domain.TaskMessage;
 
 /**
  * 真正的异步链路：把任务投递到 RabbitMQ。

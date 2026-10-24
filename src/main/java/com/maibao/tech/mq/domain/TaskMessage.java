@@ -1,4 +1,4 @@
-package com.maibao.tech.mq;
+package com.maibao.tech.mq.domain;
 
 import java.time.Instant;
 

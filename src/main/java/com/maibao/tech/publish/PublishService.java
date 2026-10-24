@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.maibao.tech.common.BizException;
+import com.maibao.tech.publish.domain.PublishRecord;
+import com.maibao.tech.publish.domain.PublishStatus;
 
 /**
  * 发布状态机：SCHEDULED → PUBLISHING → SUCCESS / FAILED。
