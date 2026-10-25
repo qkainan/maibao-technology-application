@@ -8,6 +8,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.maibao.tech.usage.util.CostProperties;
 
 class CostCalculatorTest {
 

@@ -19,6 +19,7 @@ import com.maibao.tech.mq.repository.FailedTaskRepository;
 import com.maibao.tech.usage.util.CostProperties;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import com.maibao.tech.usage.domain.dto.DetailBatch;
 
 /**
  * 明细落库消费者：手动 ack + 有限重投 + 终态进死信。

@@ -3,6 +3,7 @@ package com.maibao.tech.usage;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
+import com.maibao.tech.usage.util.TokenEstimator;
 
 class TokenEstimatorTest {
 

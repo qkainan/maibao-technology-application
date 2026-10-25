@@ -2,6 +2,7 @@ package com.maibao.tech.usage.domain.vo;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import com.maibao.tech.usage.domain.po.UserQueryLog;
 
 /** 对话流水的一条视图。 */
 public record QueryLogView(Long id,

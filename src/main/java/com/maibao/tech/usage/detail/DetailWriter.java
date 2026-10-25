@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import com.maibao.tech.usage.domain.dto.DetailRecord;
 
 /**
  * 明细的批量写库。本地直写（{@code mode=local}）和 MQ 消费端共用这一份 SQL 与参数映射，

@@ -24,6 +24,7 @@ import com.maibao.tech.usage.domain.po.UserQueryLog;
 import com.maibao.tech.usage.CostRedisRepository;
 import com.maibao.tech.usage.repository.CostAccountingRepository;
 import com.maibao.tech.usage.repository.UserQueryLogRepository;
+import com.maibao.tech.usage.util.TokenEstimator;
 
 /**
  * 对话埋点：明细入本地缓冲、成本写 Redis —— 两件事都不在请求线程碰热路径。

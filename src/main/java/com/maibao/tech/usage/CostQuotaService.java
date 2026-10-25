@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import com.maibao.tech.usage.util.CostProperties;
 import com.maibao.tech.usage.domain.vo.QuotaView;
 import com.maibao.tech.usage.CostRedisRepository;
+import com.maibao.tech.usage.util.QuotaExceededException;
 
 /**
  * 用户配额：调用模型<b>之前</b>校验，超限直接拒绝，不产生任何模型调用与费用。

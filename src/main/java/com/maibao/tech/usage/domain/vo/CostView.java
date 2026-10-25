@@ -3,6 +3,7 @@ package com.maibao.tech.usage.domain.vo;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import com.maibao.tech.usage.domain.po.CostAccounting;
 
 /** 成本聚合的一行视图。 */
 public record CostView(String model,

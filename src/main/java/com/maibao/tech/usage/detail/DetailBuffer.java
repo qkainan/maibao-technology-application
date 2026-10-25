@@ -15,6 +15,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import com.maibao.tech.usage.util.CostProperties;
+import com.maibao.tech.usage.domain.dto.DetailBatch;
+import com.maibao.tech.usage.domain.dto.DetailRecord;
 
 /**
  * 明细的攒批缓冲。
