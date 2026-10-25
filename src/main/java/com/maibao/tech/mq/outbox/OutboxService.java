@@ -1,6 +1,6 @@
-package com.maibao.tech.mq;
+package com.maibao.tech.mq.outbox;
 
-import com.maibao.tech.mq.repository.OutboxRepository;
+import com.maibao.tech.mq.outbox.repository.OutboxRepository;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import com.maibao.tech.mq.domain.OutboxMessage;
+import com.maibao.tech.mq.outbox.domain.OutboxMessage;
 import com.maibao.tech.mq.domain.TaskMessage;
 
 /**

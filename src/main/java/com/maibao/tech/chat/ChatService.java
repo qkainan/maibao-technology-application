@@ -13,6 +13,7 @@ import com.maibao.tech.adapter.domain.ChatMessage;
 import com.maibao.tech.adapter.domain.ChatRequest;
 import com.maibao.tech.adapter.domain.ProviderException;
 import com.maibao.tech.common.BizException;
+import com.maibao.tech.usage.CostQuotaService;
 import com.maibao.tech.usage.UsageService;
 
 /**
@@ -28,13 +29,17 @@ public class ChatService {
 
     private final AdapterRegistry registry;
     private final UsageService usageService;
+    private final CostQuotaService quotaService;
 
-    public ChatService(AdapterRegistry registry, UsageService usageService) {
+    public ChatService(AdapterRegistry registry, UsageService usageService,
+                       CostQuotaService quotaService) {
         this.registry = registry;
         this.usageService = usageService;
+        this.quotaService = quotaService;
     }
 
     public String chat(String userId, String appKeyRef, String model, String prompt) {
+        quotaService.check(userId);
         return chat(userId, appKeyRef, model, prompt, SOURCE_SYNC);
     }
 
@@ -60,6 +65,7 @@ public class ChatService {
     }
 
     public void stream(String userId, String appKeyRef, String model, String prompt, ChunkSink downstream) {
+        quotaService.check(userId);
         AiProviderAdapter adapter = registry.resolve(model);
         if (!adapter.capabilities().stream()) {
             throw new BizException(4003, "model 不支持流式输出: " + model);

@@ -1,8 +1,5 @@
 package com.maibao.tech.usage;
 
-import com.maibao.tech.usage.repository.CostAccountingRepository;
-import com.maibao.tech.usage.repository.UserQueryLogRepository;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -17,17 +14,23 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import com.maibao.tech.usage.domain.CostAccounting;
-import com.maibao.tech.usage.domain.CostMessage;
 import com.maibao.tech.usage.domain.CostView;
 import com.maibao.tech.usage.domain.QueryLogView;
 import com.maibao.tech.usage.domain.UsageSummaryView;
 import com.maibao.tech.usage.domain.UserQueryLog;
+import com.maibao.tech.usage.repository.CostAccountingRepository;
+import com.maibao.tech.usage.repository.UserQueryLogRepository;
 
 /**
- * 对话埋点：写一条流水，并把成本事件交给 outbox。
+ * 对话埋点：明细进本地批量队列，成本只累加到 Redis。
  *
- * <p>默认走异步：明细与 outbox 同事务提交，聚合由消费者完成；{@code app.cost.async-enabled=false}
- * 时退回同步累加（回滚路径）。失败/中断的调用不计费。</p>
+ * <p>两件事都不碰数据库的热路径：</p>
+ * <ul>
+ *   <li>明细：{@link DetailBuffer} 每 200ms 批量 INSERT（IDENTITY 主键下 JPA 批量会失效，所以走 JdbcTemplate）；</li>
+ *   <li>成本：{@link CostAccumulator} 一次 Redis pipeline，{@link CostFlushJob} 每分钟覆盖写落库。</li>
+ * </ul>
+ *
+ * <p>埋点是旁路：任何一步失败都只告警，不影响对话本身。</p>
  */
 @Service
 public class UsageService {
@@ -44,8 +47,7 @@ public class UsageService {
     private final TokenEstimator estimator;
     private final CostCalculator calculator;
     private final CostAccumulator accumulator;
-    private final UsageWriter writer;
-    private final boolean asyncEnabled;
+    private final DetailBuffer detailBuffer;
     private final ZoneId zone;
 
     public UsageService(UserQueryLogRepository queryLogRepository,
@@ -53,16 +55,14 @@ public class UsageService {
                         TokenEstimator estimator,
                         CostCalculator calculator,
                         CostAccumulator accumulator,
-                        UsageWriter writer,
-                        @Value("${app.cost.async-enabled:true}") boolean asyncEnabled,
+                        DetailBuffer detailBuffer,
                         @Value("${app.cost.zone:Asia/Shanghai}") String zone) {
         this.queryLogRepository = queryLogRepository;
         this.costRepository = costRepository;
         this.estimator = estimator;
         this.calculator = calculator;
         this.accumulator = accumulator;
-        this.writer = writer;
-        this.asyncEnabled = asyncEnabled;
+        this.detailBuffer = detailBuffer;
         this.zone = ZoneId.of(zone);
     }
 
@@ -72,7 +72,6 @@ public class UsageService {
         int promptTokens = estimator.estimate(prompt);
         int completionTokens = estimator.estimate(reply);
         boolean billable = "SUCCESS".equals(status);
-        // 只有成功的调用计费：鉴权失败/上游报错/客户端中断都没有产生有效的输出
         BigDecimal cost = billable
                 ? calculator.amount(model, promptTokens, completionTokens)
                 : BigDecimal.ZERO;
@@ -83,24 +82,18 @@ public class UsageService {
                 (int) Math.min(Integer.MAX_VALUE, Math.max(0, latencyMs)),
                 status, truncate(error, MAX_ERROR));
 
+        // ① 明细：只入本地队列，不做 IO
+        detailBuffer.offer(row);
+
         if (!billable) {
-            queryLogRepository.save(row);
             return;
         }
 
-        LocalDate statDate = LocalDate.now(zone);
-        if (asyncEnabled) {
-            writer.saveAndEnqueue(row, new CostMessage(row.getRequestId(), uid, model, statDate,
-                    promptTokens, completionTokens, cost, calculator.currency()));
-            return;
-        }
-
-        // 回滚路径：同步累加。累加失败只告警，不影响对话
-        queryLogRepository.save(row);
+        // ② 成本：一次 Redis pipeline；失败只告警（聚合表由落盘 Job 兜底）
         try {
-            accumulator.accumulate(uid, model, statDate, promptTokens, completionTokens, cost);
+            accumulator.accumulate(uid, model, LocalDate.now(zone), promptTokens, completionTokens, cost);
         } catch (RuntimeException e) {
-            log.warn("cost accumulate failed for user={} model={}: {}", uid, model, e.toString());
+            log.warn("cost accumulate failed user={} model={}: {}", uid, model, e.toString());
         }
     }
 

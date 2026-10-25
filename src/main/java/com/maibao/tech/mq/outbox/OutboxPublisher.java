@@ -1,6 +1,6 @@
-package com.maibao.tech.mq;
+package com.maibao.tech.mq.outbox;
 
-import com.maibao.tech.mq.repository.OutboxRepository;
+import com.maibao.tech.mq.outbox.repository.OutboxRepository;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -14,10 +14,11 @@ import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import com.maibao.tech.mq.domain.OutboxMessage;
+import com.maibao.tech.mq.outbox.domain.OutboxMessage;
 
 /**
  * outbox 投递器：业务只负责落库，真正发消息在这里。
@@ -28,7 +29,13 @@ import com.maibao.tech.mq.domain.OutboxMessage;
  * <p>发送前先用 nextRetryAt 做租约 CAS 抢占，抢到才发；发完等 confirm 回调标 SENT。
  * 即使 confirm 丢失，租约到期后对账/扫描会重新投递，而不是永远卡住。</p>
  */
+/**
+ * outbox 投递器。<b>默认关闭</b>（{@code app.mq.outbox-enabled=false}）：
+ * 成本链路已改为 Redis 累加 + 明细批量落库，outbox 作为"需要强投递时的备用组件"保留。
+ * 启用方式：配置 {@code app.mq.outbox-enabled=true}，并自行调用 {@code OutboxService.enqueue(...)}。
+ */
 @Component
+@ConditionalOnProperty(prefix = "app.mq", name = "outbox-enabled", havingValue = "true")
 public class OutboxPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);

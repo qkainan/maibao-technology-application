@@ -30,6 +30,12 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
   rabbitmq:
     host: localhost
     port: 5672
@@ -66,6 +72,8 @@ app:
     user-id: async-task
 
   mq:
+    # outbox 作为"强投递备用组件"保留，默认关闭（成本链路已改 Redis）
+    outbox-enabled: false
     exchange: maibao.task.exchange
     queue: maibao.task.queue
     routing-key: maibao.task
@@ -107,30 +115,26 @@ app:
       overall-timeout-ms: 300000
   cost:
     currency: CNY
-    # 成本事件：明细与 outbox 同事务，聚合由消费者完成
-    async-enabled: true
+    # 账期时区，必须与 JDBC 的 serverTimezone 一致
     zone: Asia/Shanghai
-    exchange: maibao.cost.exchange
-    queue: maibao.cost.queue
-    routing-key: maibao.cost
-    dlx-exchange: maibao.cost.dlx
-    dlq-queue: maibao.cost.dlq
-    dlq-routing-key: maibao.cost.dlq
-    max-retries: 3
-    reconcile-cron: "0 30 2 * * *"
-    cleanup-cron: "0 0 3 * * *"
-    dedupe-retain-days: 7
-    # 每 1000 token 的价格；key 取 model 的前缀（mock / openai），default 兜底
-    pricing:
-      default:
-        input-per-1k: 0.002
-        output-per-1k: 0.006
-      mock:
-        input-per-1k: 0.001
-        output-per-1k: 0.002
-      openai:
-        input-per-1k: 0.15
-        output-per-1k: 0.60
+    # 落盘间隔与日结
+    flush-ms: 60000
+    settle-cron: "0 5 0 * * *"
+    reconcile-ms: 300000
+    # 用户配额（超限直接拒绝，抛业务码 4029）
+    quota:
+      enabled: true
+      daily-per-user: 100.0
+    # Redis 累加：一个日期一个 Hash，TTL 兜底
+    redis:
+      key-prefix: "maibao:cost"
+      ttl-days: 3
+    # 明细批量写
+    detail:
+      batch-size: 2000
+      queue-capacity: 20000
+      retain-days: 7
+      flush-ms: 200
 
 logging:
   level:

@@ -1,4 +1,4 @@
-package com.maibao.tech.mq.domain;
+package com.maibao.tech.mq.outbox.domain;
 
 import java.time.Instant;
 

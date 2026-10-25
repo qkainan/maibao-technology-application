@@ -1,4 +1,4 @@
-package com.maibao.tech.mq.repository;
+package com.maibao.tech.mq.outbox.repository;
 
 import java.time.Instant;
 import java.util.List;
@@ -10,7 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.maibao.tech.mq.domain.OutboxMessage;
+import com.maibao.tech.mq.outbox.domain.OutboxMessage;
 
 public interface OutboxRepository extends JpaRepository<OutboxMessage, Long> {
 

@@ -17,6 +17,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import com.maibao.tech.mq.outbox.OutboxPublisher;
+
+import com.maibao.tech.mq.outbox.repository.OutboxRepository;
+
+import com.maibao.tech.mq.outbox.domain.OutboxMessage;
+
 import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
