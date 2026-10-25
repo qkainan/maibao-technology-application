@@ -117,6 +117,14 @@ app:
 
 指标：`cost.reconcile.lag`、`mq.detail.consume.success`、`mq.detail.consume.retry`、`mq.detail.consume.failed`、`mq.publish.confirm`、`mq.publish.returned`（`GET /actuator/metrics/{name}`）。
 
+### 队列类型与错误兜底
+
+- **队列全部是 quorum**（`app.mq.queue-type: quorum`）：Raft 复制，单节点也会落 WAL。切类型必须**先删同名 classic 队列**，否则声明报 `PRECONDITION_FAILED`；本地调试可临时改回 `classic`。
+- **错误统一落 `logs/error.YYYY-MM-DD.log`**（`logback-spring.xml` 里只收 ERROR 的 appender）。三类"以前只打一行日志"的情况现在都进这个文件：
+  - 发布 confirm 回 nack 且重试用尽 → 整批 JSON 写 ERROR；
+  - 消息不可路由（returns）→ 完整消息体写 ERROR（数据不至于只留一句 "unroutable"）；
+  - 死信队列深度 > 0 → 巡检写 ERROR（不消费，保留现场）。
+
 ### 数据库（MySQL 8）
 
 默认连 `maibao_technology_application`，账号 `root`；密码从 `application-local.yml`（已在 `.gitignore`）或环境变量 `DB_PASSWORD` 读取：
@@ -304,7 +312,7 @@ mvn test
 
 ## 边界与现状
 
-**已验证**：43 个单测通过；7 张表由 `schema.sql` 建好并通过 `validate`；发布链路抢占→执行→收尾与卡死回收、SSE 真流式（32 帧带 seq / 15s 心跳 / 断连落 CANCELLED）、成本 Redis 累加 + 分钟级覆盖写落盘、配额拒绝（业务码 4029）、发布/密钥/用量接口均实测通过。
+**已验证**：43 个单测通过；接口端到端跑通（成本累加 / 明细经 MQ 落库 / 配额拦截 / quorum 队列 / error 日志兜底）；7 张表由 `schema.sql` 建好并通过 `validate`；发布链路抢占→执行→收尾与卡死回收、SSE 真流式（32 帧带 seq / 15s 心跳 / 断连落 CANCELLED）、成本 Redis 累加 + 分钟级覆盖写落盘、配额拒绝（业务码 4029）、发布/密钥/用量接口均实测通过。
 
 **已知缺口**（如实标注，不是待修的 bug）：
 

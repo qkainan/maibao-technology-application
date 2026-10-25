@@ -79,6 +79,9 @@ app:
     user-id: async-task
 
   mq:
+    # 队列类型：quorum（Raft 复制，RabbitMQ 4.x 推荐）/ classic
+    # 注意：切类型前必须删掉已有的同名 classic 队列，否则声明会 PRECONDITION_FAILED
+    queue-type: quorum
     # outbox 作为"强投递备用组件"保留，默认关闭（成本链路已改 Redis）
     outbox-enabled: false
     exchange: maibao.task.exchange
@@ -151,17 +154,23 @@ app:
       dlq-queue: maibao.detail.dlq
       dlq-routing-key: maibao.detail.dlq
       max-retries: 3
+      # 发布未确认时的重新入队次数，超过就写 ERROR 日志兜底
+      publish-retries: 3
+      # 死信队列深度巡检间隔（毫秒）
+      dlq-check-ms: 60000
       retry-exchange: maibao.detail.retry.exchange
       # 退避档位：第 1 次失败等 5s，第 2 次 30s，第 3 次 2min（队列级 TTL + 死信回主队列）
       retry-delays-ms: 5000,30000,120000
 
-logging:
-  level:
-    com.maibao.tech: DEBUG
-  file:
-    # 控制台照常输出，同时落盘到 logs/app.log
-    name: logs/app.log
-  logback:
-    rollingpolicy:
-      max-file-size: 10MB
-      max-history: 7
+
+    # 单价：key 是 model 的冒号前缀（mock / openai），取不到用 default
+    pricing:
+      default:
+        input-per-1k: 0.002
+        output-per-1k: 0.006
+      mock:
+        input-per-1k: 0.001
+        output-per-1k: 0.002
+      openai:
+        input-per-1k: 0.15
+        output-per-1k: 0.60

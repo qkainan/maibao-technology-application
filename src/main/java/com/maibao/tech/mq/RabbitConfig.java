@@ -1,15 +1,12 @@
 package com.maibao.tech.mq;
 
-import com.maibao.tech.mq.outbox.repository.OutboxRepository;
-import com.maibao.tech.usage.util.CostProperties;
-
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Declarable;
@@ -22,10 +19,15 @@ import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.amqp.RabbitTemplateCustomizer;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import com.maibao.tech.mq.outbox.domain.OutboxMessage;
+import com.maibao.tech.mq.outbox.repository.OutboxRepository;
+import com.maibao.tech.usage.detail.DetailBuffer;
+import com.maibao.tech.usage.detail.DetailPublishResult;
+import com.maibao.tech.usage.util.CostProperties;
 
 import io.micrometer.core.instrument.MeterRegistry;
 
@@ -33,6 +35,9 @@ import io.micrometer.core.instrument.MeterRegistry;
 public class RabbitConfig {
 
     private static final Logger log = LoggerFactory.getLogger(RabbitConfig.class);
+
+    /** returns 回调里最多打多少字符的消息体，避免一条大消息刷爆日志 */
+    private static final int MAX_RETURNED_BODY = 4000;
 
     @Value("${app.mq.exchange}")
     private String exchangeName;
@@ -52,11 +57,21 @@ public class RabbitConfig {
     @Value("${app.mq.dlq-routing-key}")
     private String dlqRoutingKey;
 
+    /**
+     * 队列类型：{@code quorum}（Raft 复制，RabbitMQ 4.x 推荐）或 {@code classic}。
+     *
+     * <p>切 quorum 只需加一个 {@code x-queue-type} 参数，但<b>已存在的同名 classic 队列必须先删除</b>，
+     * 否则声明会报 PRECONDITION_FAILED。本地调试或旧 broker 可临时改成 classic。</p>
+     */
+    @Value("${app.mq.queue-type:quorum}")
+    private String queueType;
 
+    private QueueBuilder durableQueue(String name) {
+        QueueBuilder builder = QueueBuilder.durable(name);
+        return "quorum".equalsIgnoreCase(queueType) ? builder.quorum() : builder;
+    }
 
-
-
-
+    // ---------- 任务链路（当前停用，资产保留） ----------
 
     @Bean
     public DirectExchange taskExchange() {
@@ -66,15 +81,16 @@ public class RabbitConfig {
     /** 主队列绑定死信交换机：重试耗尽的 nack 会被路由到 DLQ，而不是凭空消失 */
     @Bean
     public Queue taskQueue() {
-        return QueueBuilder.durable(queueName)
+        return durableQueue(queueName)
                 .deadLetterExchange(dlxExchange)
                 .deadLetterRoutingKey(dlqRoutingKey)
                 .build();
     }
 
     @Bean
-    public Binding taskBinding(Queue taskQueue, DirectExchange taskExchange) {
-        return BindingBuilder.bind(taskQueue).to(taskExchange).with(routingKey);
+    public Binding taskBinding(@Qualifier("taskQueue") Queue queue,
+                               @Qualifier("taskExchange") DirectExchange exchange) {
+        return BindingBuilder.bind(queue).to(exchange).with(routingKey);
     }
 
     @Bean
@@ -84,14 +100,14 @@ public class RabbitConfig {
 
     @Bean
     public Queue deadLetterQueue() {
-        return QueueBuilder.durable(dlqQueue).build();
+        return durableQueue(dlqQueue).build();
     }
 
     @Bean
-    public Binding deadLetterBinding(Queue deadLetterQueue, DirectExchange deadLetterExchange) {
-        return BindingBuilder.bind(deadLetterQueue).to(deadLetterExchange).with(dlqRoutingKey);
+    public Binding deadLetterBinding(@Qualifier("deadLetterQueue") Queue queue,
+                                     @Qualifier("deadLetterExchange") DirectExchange exchange) {
+        return BindingBuilder.bind(queue).to(exchange).with(dlqRoutingKey);
     }
-
 
     // ---------- 明细落库：独立拓扑，量级是"每 200ms 一条批量消息" ----------
 
@@ -102,7 +118,7 @@ public class RabbitConfig {
 
     @Bean
     public Queue detailQueue(CostProperties properties) {
-        return QueueBuilder.durable(properties.getDetail().getQueue())
+        return durableQueue(properties.getDetail().getQueue())
                 .deadLetterExchange(properties.getDetail().getDlxExchange())
                 .deadLetterRoutingKey(properties.getDetail().getDlqRoutingKey())
                 .build();
@@ -122,7 +138,7 @@ public class RabbitConfig {
 
     @Bean
     public Queue detailDeadLetterQueue(CostProperties properties) {
-        return QueueBuilder.durable(properties.getDetail().getDlqQueue()).build();
+        return durableQueue(properties.getDetail().getDlqQueue()).build();
     }
 
     @Bean
@@ -131,7 +147,6 @@ public class RabbitConfig {
                                            CostProperties properties) {
         return BindingBuilder.bind(queue).to(exchange).with(properties.getDetail().getDlqRoutingKey());
     }
-
 
     /**
      * 明细重试的退避拓扑：每个档位一个队列，只设 TTL、没有消费者。
@@ -147,8 +162,8 @@ public class RabbitConfig {
         List<Declarable> declarables = new ArrayList<>();
         declarables.add(retryExchange);
         for (long delayMs : detail.getRetryDelaysMs()) {
-            String queueName = detail.retryQueue(delayMs);
-            Queue queue = QueueBuilder.durable(queueName)
+            String name = detail.retryQueue(delayMs);
+            Queue queue = durableQueue(name)
                     .ttl((int) Math.min(delayMs, Integer.MAX_VALUE))
                     .deadLetterExchange(detail.getExchange())
                     .deadLetterRoutingKey(detail.getRoutingKey())
@@ -166,12 +181,19 @@ public class RabbitConfig {
     }
 
     /**
-     * 生产端确认与退回：confirm 决定 outbox 是 SENT 还是重试；
-     * returns 说明消息没路由到任何队列（配置错，标记失败并告警）。
+     * 生产端确认与退回。
+     *
+     * <ul>
+     *   <li><b>confirm</b>：明细消息（correlation 以 {@code detail:} 开头）转成事件交给
+     *       {@code DetailBuffer} 决定重发还是落日志；outbox 消息（纯数字 id）仍走 outbox 状态机。</li>
+     *   <li><b>returns</b>：消息没路由到任何队列（配置错），把<b>完整消息体</b>写进 ERROR 日志 ——
+     *       同时落 {@code logs/error.YYYY-MM-DD.log}，数据不至于只留一行"unroutable"。</li>
+     * </ul>
      */
     @Bean
     public RabbitTemplateCustomizer reliablePublishCustomizer(MeterRegistry meterRegistry,
-                                                              OutboxRepository outboxRepository) {
+                                                              OutboxRepository outboxRepository,
+                                                              ApplicationEventPublisher events) {
         return template -> {
             template.setMandatory(true);
             template.setConfirmCallback((correlation, ack, cause) -> {
@@ -179,7 +201,21 @@ public class RabbitConfig {
                 if (correlation == null || correlation.getId() == null) {
                     return;
                 }
-                long outboxId = Long.parseLong(correlation.getId());
+                String id = correlation.getId();
+                if (id.startsWith(DetailBuffer.CORRELATION_PREFIX)) {
+                    String batchId = id.substring(DetailBuffer.CORRELATION_PREFIX.length());
+                    events.publishEvent(new DetailPublishResult(batchId, ack, cause));
+                    if (!ack) {
+                        log.error("detail publish not confirmed: batchId={} cause={}", batchId, cause);
+                    }
+                    return;
+                }
+                long outboxId;
+                try {
+                    outboxId = Long.parseLong(id);
+                } catch (NumberFormatException notOutbox) {
+                    return;
+                }
                 if (ack) {
                     outboxRepository.markSent(outboxId, OutboxMessage.SENT, OutboxMessage.PENDING, Instant.now());
                 } else {
@@ -191,8 +227,10 @@ public class RabbitConfig {
             template.setReturnsCallback(returned -> {
                 meterRegistry.counter("mq.publish.returned").increment();
                 String messageId = returned.getMessage().getMessageProperties().getMessageId();
-                log.error("message unroutable: exchange={} routingKey={} reply={}",
-                        returned.getExchange(), returned.getRoutingKey(), returned.getReplyText());
+                String body = new String(returned.getMessage().getBody(), StandardCharsets.UTF_8);
+                log.error("message unroutable, payload lost unless handled: exchange={} routingKey={} reply={} messageId={} payload={}",
+                        returned.getExchange(), returned.getRoutingKey(), returned.getReplyText(),
+                        messageId, abbreviate(body));
                 if (messageId != null) {
                     outboxRepository.findByMessageId(messageId).ifPresent(row ->
                             outboxRepository.markFailed(row.getId(), OutboxMessage.FAILED,
@@ -200,5 +238,14 @@ public class RabbitConfig {
                 }
             });
         };
+    }
+
+    private static String abbreviate(String text) {
+        if (text == null) {
+            return "null";
+        }
+        return text.length() <= MAX_RETURNED_BODY
+                ? text
+                : text.substring(0, MAX_RETURNED_BODY) + "...<truncated>";
     }
 }

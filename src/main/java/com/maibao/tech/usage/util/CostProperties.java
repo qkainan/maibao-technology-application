@@ -212,6 +212,12 @@ public class CostProperties {
         /** 消费失败后的重投次数上限 */
         private int maxRetries = 3;
 
+        /** 发布未确认（confirm nack）时的重新入队次数上限，超过就写 ERROR 日志兜底 */
+        private int publishRetries = 3;
+
+        /** 死信队列深度巡检间隔（毫秒） */
+        private long dlqCheckMs = 60_000L;
+
         /** 退避延迟队列用的交换机 */
         private String retryExchange = "maibao.detail.retry.exchange";
 
@@ -321,6 +327,22 @@ public class CostProperties {
 
         public void setMaxRetries(int maxRetries) {
             this.maxRetries = maxRetries;
+        }
+
+        public int getPublishRetries() {
+            return publishRetries;
+        }
+
+        public void setPublishRetries(int publishRetries) {
+            this.publishRetries = publishRetries;
+        }
+
+        public long getDlqCheckMs() {
+            return dlqCheckMs;
+        }
+
+        public void setDlqCheckMs(long dlqCheckMs) {
+            this.dlqCheckMs = dlqCheckMs;
         }
 
         public String getRetryExchange() {
