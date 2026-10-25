@@ -30,8 +30,9 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 ## 快速开始
 
 ```bash
-# 0. 建库（MySQL 8）并把密码放本地文件（不进仓库）
+# 0. 建库并建表（MySQL 8）
 mysql -u root -p -e "CREATE DATABASE maibao_technology_application DEFAULT CHARSET utf8mb4;"
+mysql -u root -p maibao_technology_application < docs/schema.sql
 cp application-local.yml.example application-local.yml   # 填 spring.datasource.password
 
 # 1. 跑起来（需要本地 MySQL 与 RabbitMQ，见下面两节）
@@ -69,7 +70,7 @@ spring:
     password: 你的密码
 ```
 
-启动时 Hibernate（`ddl-auto: update`）自动建表：
+表结构以 [`docs/schema.sql`](docs/schema.sql) 为准（应用侧 `ddl-auto: validate`，只校验不改结构），共 6 张表：
 
 | 表 | 用途 |
 |---|---|

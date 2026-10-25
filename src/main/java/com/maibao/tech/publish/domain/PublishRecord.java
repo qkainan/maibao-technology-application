@@ -12,6 +12,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 /**
  * 发布记录：一张表承载立即 / 定时 / 灰度三种发布方式。
  *
@@ -20,9 +23,12 @@ import jakarta.persistence.Table;
 @Entity
 @Table(name = "publish_record",
         indexes = {
-                // 到期扫描的查询条件是 status = ? AND scheduled_at <= ?：
-                // 等值列在前、范围列在后，才能用上这条联合索引。
-                @Index(name = "idx_status_scheduled_at", columnList = "status, scheduled_at")
+                // 到期扫描：status = ? AND scheduled_at <= ?，等值列在前、范围列在后
+                @Index(name = "idx_status_scheduled_at", columnList = "status, scheduled_at"),
+                // 卡死回收：status = 'PUBLISHING' AND claimed_at < ?
+                @Index(name = "idx_status_claimed_at", columnList = "status, claimed_at"),
+                // 按节点查发布历史
+                @Index(name = "idx_publish_node", columnList = "node_id")
         })
 public class PublishRecord {
 
@@ -34,6 +40,7 @@ public class PublishRecord {
     private String nodeId;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "status", nullable = false, length = 16)
     private PublishStatus status;
 

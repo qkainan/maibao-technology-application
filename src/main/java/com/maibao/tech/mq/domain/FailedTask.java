@@ -18,7 +18,10 @@ import jakarta.persistence.Table;
  */
 @Entity
 @Table(name = "failed_task",
-        indexes = @Index(name = "idx_failed_task_id", columnList = "task_id"))
+        indexes = {
+                @Index(name = "idx_failed_task_id", columnList = "task_id"),
+                @Index(name = "idx_failed_created", columnList = "created_at")
+        })
 public class FailedTask {
 
     private static final int MAX_TEXT = 512;

@@ -23,7 +23,10 @@ import jakarta.persistence.UniqueConstraint;
 @Table(name = "cost_accounting",
         uniqueConstraints = @UniqueConstraint(name = "uk_cost_user_model_date",
                 columnNames = {"user_id", "model", "stat_date"}),
-        indexes = @Index(name = "idx_cost_user_date", columnList = "user_id, stat_date"))
+        indexes = {
+                @Index(name = "idx_cost_user_date_model", columnList = "user_id, stat_date, model"),
+                @Index(name = "idx_cost_date", columnList = "stat_date")
+        })
 public class CostAccounting {
 
     @Id

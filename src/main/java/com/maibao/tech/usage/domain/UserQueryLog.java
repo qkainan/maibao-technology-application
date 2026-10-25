@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 /**
  * 一次 AI 对话的流水：谁、用什么模型、问了什么、花了多少 token / 多少钱。
@@ -19,7 +20,11 @@ import jakarta.persistence.Table;
  */
 @Entity
 @Table(name = "user_query_log",
-        indexes = @Index(name = "idx_query_user_created", columnList = "user_id, created_at"))
+        uniqueConstraints = @UniqueConstraint(name = "uk_query_request", columnNames = "request_id"),
+        indexes = {
+                @Index(name = "idx_query_user_id", columnList = "user_id, id"),
+                @Index(name = "idx_query_created", columnList = "created_at")
+        })
 public class UserQueryLog {
 
     @Id
