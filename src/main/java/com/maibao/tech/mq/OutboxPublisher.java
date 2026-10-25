@@ -23,31 +23,33 @@ import com.maibao.tech.mq.domain.TaskMessage;
  * <p>为什么不能"业务 commit 后直接 send"：send 失败就永久丢消息，且没有任何记录可补救。
  * 先落 outbox，再由这里投递，失败就退避重试，消息始终有据可查。</p>
  *
- * <p>发送成功后只把 nextRetryAt 往后推，等 confirm 回调再标 SENT —— 这样即使 confirm
- * 丢失，对账任务也能把它打回 PENDING 重投，而不是每 2 秒重复发送。</p>
+ * <p>发送前先用 nextRetryAt 做租约 CAS 抢占，抢到才发；发完等 confirm 回调标 SENT。
+ * 即使 confirm 丢失，租约到期后对账/扫描会重新投递，而不是永远卡住。</p>
  */
 @Component
 public class OutboxPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);
-    private static final long CONFIRM_WAIT_SECONDS = 30;
 
     private final OutboxRepository repository;
     private final OutboxService outboxService;
     private final RabbitTemplate rabbitTemplate;
     private final int maxAttempts;
     private final long consumeTimeoutSeconds;
+    private final long leaseSeconds;
 
     public OutboxPublisher(OutboxRepository repository,
                            OutboxService outboxService,
                            RabbitTemplate rabbitTemplate,
                            @Value("${app.mq.outbox-max-attempts:5}") int maxAttempts,
-                           @Value("${app.mq.consume-timeout-seconds:300}") long consumeTimeoutSeconds) {
+                           @Value("${app.mq.consume-timeout-seconds:300}") long consumeTimeoutSeconds,
+                           @Value("${app.mq.outbox-lease-seconds:30}") long leaseSeconds) {
         this.repository = repository;
         this.outboxService = outboxService;
         this.rabbitTemplate = rabbitTemplate;
         this.maxAttempts = maxAttempts;
         this.consumeTimeoutSeconds = consumeTimeoutSeconds;
+        this.leaseSeconds = leaseSeconds;
     }
 
     @Scheduled(fixedDelayString = "${app.mq.outbox-scan-ms:2000}", initialDelay = 3000)
@@ -55,6 +57,14 @@ public class OutboxPublisher {
         List<OutboxMessage> batch = repository.findTop20ByStatusAndNextRetryAtLessThanEqualOrderByIdAsc(
                 OutboxMessage.PENDING, Instant.now());
         for (OutboxMessage row : batch) {
+            Instant now = Instant.now();
+            // CAS 抢占：扫描可能有多个实例同时拿到同一行，但 UPDATE 只有一行能成功。
+            // 抢到的实例把 next_retry_at 推到租约到期时间；没抢到的直接跳过。
+            if (repository.claim(row.getId(), OutboxMessage.PENDING,
+                    now.plusSeconds(leaseSeconds), now) != 1) {
+                log.debug("outbox message {} already claimed by another instance", row.getId());
+                continue;
+            }
             try {
                 TaskMessage message = outboxService.toMessage(row);
                 CorrelationData correlation = new CorrelationData(String.valueOf(row.getId()));
@@ -63,8 +73,6 @@ public class OutboxPublisher {
                     m.getMessageProperties().setDeliveryMode(MessageDeliveryMode.PERSISTENT);
                     return m;
                 }, correlation);
-                repository.markPublished(row.getId(),
-                        Instant.now().plusSeconds(CONFIRM_WAIT_SECONDS), Instant.now());
             } catch (Exception e) {
                 scheduleRetry(row, e);
             }

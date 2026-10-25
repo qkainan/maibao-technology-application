@@ -28,15 +28,22 @@ OS --> TC : taskId
 TC --> 客户端 : 已受理
 
 OP -> OB : SELECT status=PENDING\nAND next_retry_at <= now
-OP -> RT : convertAndSend(persistent, mandatory,\nCorrelationData=outboxId)
-RT -> MQ : publish
-MQ --> RT : confirm(ack / nack)
-alt ack
-  RT -> OB : UPDATE status=SENT
-else nack
-  RT -> OB : UPDATE status=PENDING\nattempts+1，指数退避
+loop 每条待投递记录
+  OP -> OB : UPDATE next_retry_at = now+lease\nWHERE id=? AND status=PENDING\nAND next_retry_at <= now
+  alt 影响行数 = 1（抢到租约）
+    OP -> RT : convertAndSend(persistent, mandatory,\nCorrelationData=outboxId)
+    RT -> MQ : publish
+    MQ --> RT : confirm(ack / nack)
+    alt ack
+      RT -> OB : UPDATE status=SENT
+    else nack
+      RT -> OB : UPDATE status=PENDING\nattempts+1，指数退避
+    end
+    RT -> OB : returns 未路由 → status=FAILED + 告警
+  else 影响行数 = 0（别的实例先抢到）
+    OP -> OP : skip
+  end
 end
-RT -> OB : returns 未路由 → status=FAILED + 告警
 
 == 消费端：幂等锚点先提交，业务在事务外 ==
 MQ -> CS : deliver（手动 ack）

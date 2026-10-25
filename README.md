@@ -86,11 +86,12 @@ mvn spring-boot:run
 任务提交只写本地消息表（`mq_outbox`），由定时任务投递，消息不会因为"业务提交后 send 失败"而永久丢失：
 
 1. `POST /api/task/submit` → 写 `mq_outbox`（`PENDING`），返回 taskId；
-2. 投递器每 2s 扫 `PENDING` → 发送 → confirm `ack` 才标 `SENT`；
-3. 消费者真的调一次模型（`model` 默认 `mock:echo`，可在提交时指定）并写用量/成本，`source=ASYNC`；
-4. 消费成功后回执 `CONSUMED`；
-5. 失败带 `x-retry-count` 重投（最多 3 次）；鉴权失败、内容过滤、参数错误不重试，直接写 `failed_task` 并 nack → 进死信队列 `maibao.task.dlq`；
-6. 对账任务每分钟跑：`SENT` 超过 5 分钟没有回执的重新投递，重试次数用尽的标 `FAILED`。
+2. 投递器每 2s 扫 `PENDING`，先用 `next_retry_at` 当租约做 CAS 抢占（`UPDATE ... WHERE id=? AND status='PENDING' AND next_retry_at<=now`），**影响行数为 1 才发送**——多实例同时扫也不会重复投递；
+3. 发送后等 confirm `ack` 才标 `SENT`；
+4. 消费者真的调一次模型（`model` 默认 `mock:echo`，可在提交时指定）并写用量/成本，`source=ASYNC`；
+5. 消费成功后回执 `CONSUMED`；
+6. 失败带 `x-retry-count` 重投（最多 3 次）；鉴权失败、内容过滤、参数错误不重试，直接写 `failed_task` 并 nack → 进死信队列 `maibao.task.dlq`；
+7. 对账任务每分钟跑：`SENT` 超过 5 分钟没有回执的重新投递，重试次数用尽的标 `FAILED`。
 
 指标：`mq.publish.confirm`、`mq.publish.returned`、`mq.consume.success`、`mq.consume.duplicate`、`mq.consume.retry`、`mq.consume.failed`（`GET /actuator/metrics/{name}`）。
 

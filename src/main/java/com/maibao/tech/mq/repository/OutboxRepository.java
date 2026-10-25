@@ -18,11 +18,19 @@ public interface OutboxRepository extends JpaRepository<OutboxMessage, Long> {
 
     List<OutboxMessage> findTop20ByStatusAndNextRetryAtLessThanEqualOrderByIdAsc(String status, Instant now);
 
-    /** 已投递、等待 confirm：只把下次检查时间往后推，避免扫描线程重复发送 */
+    /**
+     * 用 next_retry_at 当租约做 CAS 抢占：只有一个实例能把「PENDING 且已到期」的行推到未来。
+     * 返回 1 才由本实例发送；返回 0 说明别的实例先抢到了，直接跳过。
+     *
+     * <p>多实例同时扫同一张 outbox 时，这一步是防止重复投递的关键：扫描本身有竞态，
+     * 但 UPDATE 只有一行能成功。</p>
+     */
     @Modifying
     @Transactional
-    @Query("update OutboxMessage o set o.nextRetryAt = :nextCheck, o.updatedAt = :now where o.id = :id")
-    int markPublished(@Param("id") Long id, @Param("nextCheck") Instant nextCheck, @Param("now") Instant now);
+    @Query("update OutboxMessage o set o.nextRetryAt = :leaseUntil, o.updatedAt = :now "
+            + "where o.id = :id and o.status = :pending and o.nextRetryAt <= :now")
+    int claim(@Param("id") Long id, @Param("pending") String pending,
+              @Param("leaseUntil") Instant leaseUntil, @Param("now") Instant now);
 
     @Modifying
     @Transactional
