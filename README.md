@@ -14,10 +14,10 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 
 | 技术点 | 在这个项目里 |
 |---|---|
-| 适配器模式统一多厂商出入参 | `adapter/` — `AiProviderAdapter` + `AdapterRegistry` |
+| 适配器模式统一多厂商出入参 | `adapter/` — `AiProviderAdapter` + `AdapterRegistry`，带 `capabilities()` 与错误码归一 |
 | 循环节点（循环变量 / 终止条件 / 轮次上限） | `workflow/LoopNode.java` |
-| SSE 流式链路（帧解析 + 增量归一） | `chat/stream/SseFrameParser.java`、`ChunkNormalizer.java` |
-| RabbitMQ（持久化 + confirm/returns + 重试 + 幂等） | `mq/` — `RabbitTaskDispatcher`、`TaskConsumer`、`TaskProcessor` |
+| SSE 流式链路（真流式 + 帧解析 + 心跳 + seq + 取消） | `chat/stream/` — `OpenAiSseDecoder`、`SseStreamSession` |
+| RabbitMQ（outbox + confirm/returns + 重试 + 死信 + 对账） | `mq/` — `OutboxPublisher`、`TaskConsumer`、`TaskProcessor` |
 | 多线程与锁（状态抢占、乐观锁、卡死回收） | `publish/` — `PublishRepository.claim`、`PublishExecutor` |
 | 密钥加密（密文入库 + 归属校验） | `security/` — `AesGcmCipher`、`KeyVaultService` |
 | 构建与发布（分层缓存 + 多阶段） | `Dockerfile`、`deploy/nginx.conf`、`.github/workflows/ci.yml` |
@@ -60,6 +60,15 @@ mvn spring-boot:run
 | GET | `/api/usage/cost?userId=u1` | 成本明细（模型 × 天） |
 | GET | `/api/usage/summary?userId=u1` | 累计请求数 / token / 成本 |
 
+### SSE 流式
+
+- 控制器只建 `SseEmitter`，读取在独立线程池里跑，容器线程立刻释放；
+- 上游字节流按行喂给 `OpenAiSseDecoder`：自攒 buffer 按空行切帧、多行 `data:` 拼接、`[DONE]` 结束；
+- 每个事件带自增 `id`，前端可用于去重/排查；
+- 每 15s 一个 `: keep-alive` 注释帧，避免网关把空闲连接判死；
+- 客户端断开 → 写失败 → 取消标记 → 适配器停止读取上游并关闭连接，流水记 `CANCELLED` 且不计费；
+- 超时分层：连接 5s / 首字节 30s / 整体 300s。
+
 ### 错误响应
 
 | 场景 | HTTP | 响应体 |
@@ -74,9 +83,15 @@ mvn spring-boot:run
 
 ### 异步任务与失败处理
 
-- 消费失败不直接丢弃：带 `x-retry-count` 头重新投递，最多 `app.mq.max-retries`（默认 3）次；
-- 重试耗尽写 `failed_task` 表（`task_id` / `payload` / `reason` / `attempts`）再 nack，避免毒消息堵队列；
-- 指标：`mq.publish.confirm`、`mq.publish.returned`、`mq.consume.success`、`mq.consume.duplicate`、`mq.consume.retry`、`mq.consume.failed`（`GET /actuator/metrics/{name}`）。
+任务提交只写本地消息表（`mq_outbox`），由定时任务投递，消息不会因为"业务提交后 send 失败"而永久丢失：
+
+1. `POST /api/task/submit` → 写 `mq_outbox`（`PENDING`），返回 taskId；
+2. 投递器每 2s 扫 `PENDING` → 发送 → confirm `ack` 才标 `SENT`；
+3. 消费成功后回执 `CONSUMED`；
+4. 失败带 `x-retry-count` 重投（最多 3 次），耗尽写 `failed_task` 并 nack → 进死信队列 `maibao.task.dlq`；
+5. 对账任务每分钟跑：`SENT` 超过 5 分钟没有回执的重新投递，重试次数用尽的标 `FAILED`。
+
+指标：`mq.publish.confirm`、`mq.publish.returned`、`mq.consume.success`、`mq.consume.duplicate`、`mq.consume.retry`、`mq.consume.failed`（`GET /actuator/metrics/{name}`）。
 
 ### 数据库（MySQL 8）
 
@@ -88,7 +103,7 @@ spring:
     password: 你的密码
 ```
 
-表结构以 [`docs/schema.sql`](docs/schema.sql) 为准（应用侧 `ddl-auto: validate`，只校验不改结构），共 6 张表：`publish_record`、`processed_task`、`failed_task`、`api_key`、`user_query_log`、`cost_accounting`。字段、索引与设计说明见 [`docs/03-数据库设计.md`](docs/03-数据库设计.md)。
+表结构以 [`docs/schema.sql`](docs/schema.sql) 为准（应用侧 `ddl-auto: validate`，只校验不改结构），共 7 张表：`publish_record`、`processed_task`、`failed_task`、`mq_outbox`、`api_key`、`user_query_log`、`cost_accounting`。字段、索引与设计说明见 [`docs/03-数据库设计.md`](docs/03-数据库设计.md)。
 
 不装 MySQL 时可以用 H2 profile：
 
@@ -132,11 +147,12 @@ broker 不可用时应用仍能启动（监听容器会在后台重连），但 
 
 | 环节 | 做法 |
 |---|---|
-| 生产端 | `publisher-confirm-type: correlated` + `publisher-returns`，未确认/未路由的消息记 error 并计数 |
-| 投递 | 消息持久化 + 队列持久化 |
+| 生产端 | 先写 `mq_outbox`，再由投递器发送；confirm 决定 `SENT` 还是重试 |
+| 投递 | 消息持久化 + 队列持久化；未路由消息由 returns 标记失败并告警 |
 | 消费 | 手动 ack；失败时带 `x-retry-count` 头重新投递 |
-| 兜底 | 重试耗尽写 `failed_task` 表并 nack |
-| 幂等 | `processed_task` 的唯一约束；去重记录与业务动作在同一个事务里，失败一起回滚，重试才有机会重跑 |
+| 兜底 | 重试耗尽写 `failed_task` 表并 nack，消息路由到死信队列 |
+| 幂等 | `processed_task` 的唯一约束；去重记录与业务动作在同一个事务里，失败一起回滚 |
+| 对账 | `SENT` 超时无回执 → 重新投递；重试次数用尽 → `FAILED` |
 
 ---
 
@@ -175,8 +191,8 @@ src/main/java/com/maibao/tech/
 
 | 模块 | `domain/` 内容 |
 |---|---|
-| `adapter/domain` | `ChatRequest`、`ChatMessage`、`ChatChunk`（统一出入参） |
-| `mq/domain` | `TaskMessage`（消息体）、`ProcessedTask`、`FailedTask`（PO） |
+| `adapter/domain` | `ChatRequest`、`ChatMessage`、`ChatChunk`（统一出入参）、`Capabilities`、`ProviderError` |
+| `mq/domain` | `TaskMessage`（消息体）、`ProcessedTask`、`FailedTask`、`OutboxMessage`（PO） |
 | `publish/domain` | `PublishRecord`（PO）、`PublishStatus`（枚举） |
 | `security/domain` | `ApiKeyEntity`（PO） |
 | `usage/domain` | `UserQueryLog`、`CostAccounting`（PO）、`QueryLogView`、`CostView`、`UsageSummaryView`（VO） |
@@ -190,7 +206,7 @@ src/main/java/com/maibao/tech/
 mvn test
 ```
 
-27 个用例全部通过（2026-10-24）。
+36 个用例全部通过（2026-10-25）。
 
 覆盖的关键点：
 - `SseFrameParserTest` — 半包 / 粘包 / 多帧切分
@@ -200,18 +216,20 @@ mvn test
 - `PublishServiceTest` — 只对抢到的记录提交执行、成功/失败收尾、收尾落空、卡死回收
 - `TaskConsumerTest` — 重复消息 ack 跳过、失败重投（重试次数 +1）、重试耗尽落失败表
 - `TokenEstimatorTest` / `CostCalculatorTest` — token 估算与按模型定价
+- `OpenAiSseDecoderTest` — 帧切分、`[DONE]` 哨兵、reasoning 归一、坏行跳过
+- `OpenAiCompatibleAdapterTest` — 401/429/500 错误码归一、分片流式解析、取消传播（用 JDK HttpServer 起假厂商，不依赖外网）
 
 ---
 
 ## 边界与现状
 
-**已验证**：27 个单测通过；6 张表由 `schema.sql` 建好并通过 `validate`；发布链路抢占→执行→收尾与卡死回收、MQ 重试与失败表、对话/流式/工作流/发布/密钥/用量接口均实测通过。
+**已验证**：36 个单测通过；7 张表由 `schema.sql` 建好并通过 `validate`；发布链路抢占→执行→收尾与卡死回收、SSE 真流式（32 帧带 seq / 15s 心跳 / 断连落 CANCELLED）、outbox 投递（PENDING→SENT→CONSUMED）、MQ 重试与死信、对话/工作流/发布/密钥/用量接口均实测通过。
 
 **已知缺口**（如实标注，不是待修的 bug）：
 
-1. `SseFrameParser` / `ChunkNormalizer` 目前只有单测，没有接进 `/api/chat/stream`——页面上的流式效果来自 `MockAdapter` 逐字符推流。
-2. 没有 `@SpringBootTest` 集成测试，状态机与消费重试靠单测 + 手工端到端验证。
-3. MQ 没有死信队列和延迟重试，用「有限重试 + 失败表」替代。
+1. 没有 `@SpringBootTest` 集成测试，状态机与消费重试靠单测 + 手工端到端验证。
+2. 成本明细与聚合表没有对账任务（明细是权威，聚合可重算，但没有定时比对）。
+3. 重试是"带计数重新投递"，没有延迟重试（死信队列已补，延迟要靠额外插件或延迟队列）。
 
 **范围边界**：定时调度、灰度切流、审批流、服务注册发现、DAG 执行引擎、多租户与限流都不在本项目范围内，完整清单见 [`docs/01-设计取舍.md`](docs/01-设计取舍.md)。
 

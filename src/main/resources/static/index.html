@@ -212,7 +212,7 @@
       <div class="stream-box reasoning" id="sse-reasoning"></div>
       <div class="stream-box" id="sse-text"></div>
       <p class="hint" style="margin-top:10px">
-        统计口径：每收到一个 SSE 事件记一帧。<code>done</code> 到达即收尾；若服务端直接断开，浏览器会尝试自动重连，本页会主动关闭并提示。
+        统计口径：每收到一个 SSE 事件记一帧，事件带自增 <code>id</code>；服务端每 15s 发一个 <code>: keep-alive</code> 注释帧（浏览器不显示）。<code>done</code> 到达即收尾；客户端断开会让服务端停止读取上游。
       </p>
     </div>
   </section>
@@ -541,7 +541,7 @@
   /* ---------- SSE ---------- */
   let es = null;
   let sseStartedAt = 0;
-  const sseCount = { text: 0, reasoning: 0 };
+  const sseCount = { text: 0, reasoning: 0, lastId: '-' };
 
   function sseMeta(text) { $('sse-meta').textContent = text; }
 
@@ -552,7 +552,7 @@
     $('sse-start').disabled = false;
     $('sse-stop').disabled = true;
     sseMeta(reason + ' · text ' + sseCount.text + ' 帧 · reasoning ' + sseCount.reasoning +
-      ' 帧 · ' + Math.round(performance.now() - sseStartedAt) + ' ms');
+      ' 帧 · 最后 id ' + sseCount.lastId + ' · ' + Math.round(performance.now() - sseStartedAt) + ' ms');
   }
 
   $('sse-start').addEventListener('click', function () {
@@ -579,14 +579,24 @@
 
     source.addEventListener('reasoning', function (e) {
       sseCount.reasoning += 1;
+      sseCount.lastId = e.lastEventId || sseCount.lastId;
       $('sse-reasoning').textContent += e.data;
     });
     source.addEventListener('text', function (e) {
       sseCount.text += 1;
+      sseCount.lastId = e.lastEventId || sseCount.lastId;
       $('sse-text').textContent += e.data;
     });
     source.addEventListener('done', function () {
       sseFinish('完成');
+    });
+    source.addEventListener('failed', function (e) {
+      let detail = e.data || '';
+      try {
+        const parsed = JSON.parse(e.data);
+        detail = parsed.code + ': ' + parsed.message;
+      } catch (ignored) { /* 非 JSON 就原样显示 */ }
+      sseFinish('失败 ' + detail);
     });
     source.onerror = function () {
       if (!es) return;

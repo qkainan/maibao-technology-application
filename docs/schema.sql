@@ -89,7 +89,25 @@ CREATE TABLE IF NOT EXISTS `failed_task` (
   KEY `idx_failed_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='重试耗尽的失败任务';
 
--- ---------- 2.6 密钥 ----------
+-- ---------- 2.6 本地消息表（outbox） ----------
+CREATE TABLE IF NOT EXISTS `mq_outbox` (
+  `id`            bigint        NOT NULL AUTO_INCREMENT COMMENT '自增主键',
+  `message_id`    varchar(64)   NOT NULL                COMMENT '业务幂等键（taskId）',
+  `exchange_name` varchar(64)   NOT NULL                COMMENT '目标交换机',
+  `routing_key`   varchar(64)   NOT NULL                COMMENT '路由键',
+  `payload`       varchar(1024) NOT NULL                COMMENT '消息体 JSON',
+  `status`        varchar(16)   NOT NULL                COMMENT 'PENDING / SENT / CONSUMED / FAILED',
+  `attempts`      int           NOT NULL DEFAULT 0      COMMENT '已投递次数',
+  `next_retry_at` datetime(6)   NOT NULL                COMMENT '下次可投递时间',
+  `last_error`    varchar(255)  DEFAULT NULL            COMMENT '最后一次失败原因',
+  `created_at`    datetime(6)   NOT NULL                COMMENT '创建时间',
+  `updated_at`    datetime(6)   NOT NULL                COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_outbox_message` (`message_id`),
+  KEY `idx_outbox_status_retry` (`status`, `next_retry_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='本地消息表';
+
+-- ---------- 2.7 密钥 ----------
 CREATE TABLE IF NOT EXISTS `api_key` (
   `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT '自增主键',
   `owner_id`    varchar(64)  NOT NULL                COMMENT '归属人',

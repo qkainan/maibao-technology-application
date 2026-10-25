@@ -50,12 +50,13 @@ public class UsageService {
     }
 
     public void record(String userId, String model, String source, String prompt, String reply,
-                       long latencyMs, boolean success, String error) {
+                       long latencyMs, String status, String error) {
         String uid = normalize(userId);
         int promptTokens = estimator.estimate(prompt);
         int completionTokens = estimator.estimate(reply);
-        // 失败的调用不计费：鉴权失败 / 上游报错时并没有真的消耗输出
-        BigDecimal cost = success
+        boolean billable = "SUCCESS".equals(status);
+        // 只有成功的调用计费：鉴权失败/上游报错/客户端中断都没有产生有效的输出
+        BigDecimal cost = billable
                 ? calculator.amount(model, promptTokens, completionTokens)
                 : BigDecimal.ZERO;
 
@@ -63,10 +64,10 @@ public class UsageService {
                 truncate(prompt, MAX_PROMPT), truncate(reply, MAX_REPLY),
                 promptTokens, completionTokens, cost,
                 (int) Math.min(Integer.MAX_VALUE, Math.max(0, latencyMs)),
-                success ? "SUCCESS" : "FAILED", truncate(error, MAX_ERROR));
+                status, truncate(error, MAX_ERROR));
         queryLogRepository.save(row);
 
-        if (!success) {
+        if (!billable) {
             return;
         }
         try {

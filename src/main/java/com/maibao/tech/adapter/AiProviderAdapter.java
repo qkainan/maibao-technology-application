@@ -1,7 +1,6 @@
 package com.maibao.tech.adapter;
 
-import java.util.function.Consumer;
-import com.maibao.tech.adapter.domain.ChatChunk;
+import com.maibao.tech.adapter.domain.Capabilities;
 import com.maibao.tech.adapter.domain.ChatRequest;
 
 /**
@@ -14,9 +13,12 @@ public interface AiProviderAdapter {
     /** 适配器名，用于按 model 前缀路由，如 openai / mock / qwen */
     String name();
 
+    /** 能力声明：上层据此做参数校验与降级，不靠 model 名硬编码 */
+    Capabilities capabilities();
+
     /** 同步调用 */
     String chat(String appKeyRef, ChatRequest request);
 
     /** 流式调用：把厂商的增量转成统一的 ChatChunk 往下游推 */
-    void stream(String appKeyRef, ChatRequest request, Consumer<ChatChunk> sink);
+    void stream(String appKeyRef, ChatRequest request, ChunkSink sink);
 }

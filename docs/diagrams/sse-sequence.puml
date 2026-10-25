@@ -1,0 +1,44 @@
+@startuml sse-sequence
+title SSE 链路：建连 → 流式解析 → 心跳 → 取消
+skinparam defaultFontName "Microsoft YaHei"
+skinparam shadowing false
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+autonumber
+
+actor 浏览器
+participant "ChatController" as CC
+participant "流式线程池" as POOL
+participant "ChatService" as SVC
+participant "Adapter" as AD
+participant "厂商" as UP
+participant "SseStreamSession" as SE
+participant "心跳调度" as HB
+
+浏览器 -> CC : GET /api/chat/stream?prompt=...
+CC -> SE : new SseStreamSession(300s)
+CC -> POOL : submit(读取任务)
+CC --> 浏览器 : 200 + text/event-stream\n（容器线程立刻释放）
+POOL -> HB : scheduleAtFixedRate(15s)
+POOL -> SVC : stream(userId, model, prompt, sink)
+SVC -> AD : registry.resolve(model)
+SVC -> AD : capabilities().stream 校验
+AD -> UP : POST /chat/completions  stream=true
+UP --> AD : 字节流（SSE 帧）
+loop 每读一行
+  AD -> AD : OpenAiSseDecoder.feedLine\n（切帧 + 归一）
+  AD -> SE : onChunk(ChatChunk)
+  SE --> 浏览器 : id:N + event:text / reasoning
+end
+HB --> 浏览器 : : keep-alive（每 15s）
+
+alt 客户端主动断开
+  SE -> SE : cancelled = true
+  AD -> AD : 下一次读行检测到取消\n抛 StreamCancelledException，关闭上游
+  SVC -> SVC : 流水 CANCELLED，不计费
+else 正常结束
+  AD -> SE : ChatChunk.done
+  SE --> 浏览器 : event:done
+  SVC -> SVC : 流水 SUCCESS（token / 耗时 / 成本）
+end
+@enduml

@@ -1,22 +1,24 @@
 package com.maibao.tech.chat;
 
 import java.util.List;
-import java.util.function.Consumer;
 
 import org.springframework.stereotype.Service;
 
 import com.maibao.tech.adapter.AdapterRegistry;
 import com.maibao.tech.adapter.AiProviderAdapter;
+import com.maibao.tech.adapter.ChunkSink;
+import com.maibao.tech.adapter.StreamCancelledException;
 import com.maibao.tech.adapter.domain.ChatChunk;
 import com.maibao.tech.adapter.domain.ChatMessage;
 import com.maibao.tech.adapter.domain.ChatRequest;
+import com.maibao.tech.adapter.domain.ProviderException;
+import com.maibao.tech.common.BizException;
 import com.maibao.tech.usage.UsageService;
 
 /**
- * 对话服务：选适配器、拼请求，并记录一次用量（流水 + 当天成本）。
+ * 对话服务：选适配器、做能力校验、拼请求，并记录一次用量。
  *
- * <p>埋点是旁路：写日志失败不应该影响对话本身，所以 {@link UsageService#record}
- * 内部自己吞掉成本累加异常。</p>
+ * <p>埋点是旁路：写流水/成本失败不影响对话本身（{@link UsageService#record} 内部吞掉成本异常）。</p>
  */
 @Service
 public class ChatService {
@@ -39,32 +41,59 @@ public class ChatService {
         try {
             String reply = adapter.chat(appKeyRef, request);
             usageService.record(userId, model, SOURCE_SYNC, prompt, reply,
-                    System.currentTimeMillis() - start, true, null);
+                    System.currentTimeMillis() - start, "SUCCESS", null);
             return reply;
+        } catch (ProviderException e) {
+            usageService.record(userId, model, SOURCE_SYNC, prompt, null,
+                    System.currentTimeMillis() - start, "FAILED", e.getMessage());
+            throw e;
         } catch (RuntimeException e) {
             usageService.record(userId, model, SOURCE_SYNC, prompt, null,
-                    System.currentTimeMillis() - start, false, e.getMessage());
+                    System.currentTimeMillis() - start, "FAILED", e.getMessage());
             throw e;
         }
     }
 
-    public void stream(String userId, String appKeyRef, String model, String prompt, Consumer<ChatChunk> sink) {
+    public void stream(String userId, String appKeyRef, String model, String prompt, ChunkSink downstream) {
         AiProviderAdapter adapter = registry.resolve(model);
+        if (!adapter.capabilities().stream()) {
+            throw new BizException(4003, "model 不支持流式输出: " + model);
+        }
         ChatRequest request = new ChatRequest(model, List.of(ChatMessage.user(prompt)), 0.7);
         long start = System.currentTimeMillis();
         StringBuilder reply = new StringBuilder();
-        try {
-            adapter.stream(appKeyRef, request, chunk -> {
+
+        ChunkSink accumulator = new ChunkSink() {
+            @Override
+            public void onChunk(ChatChunk chunk) {
                 if (!chunk.finished() && !chunk.reasoning()) {
                     reply.append(chunk.delta());
                 }
-                sink.accept(chunk);
-            });
+                downstream.onChunk(chunk);
+            }
+
+            @Override
+            public boolean cancelled() {
+                return downstream.cancelled();
+            }
+        };
+
+        try {
+            adapter.stream(appKeyRef, request, accumulator);
             usageService.record(userId, model, SOURCE_STREAM, prompt, reply.toString(),
-                    System.currentTimeMillis() - start, true, null);
+                    System.currentTimeMillis() - start, "SUCCESS", null);
+        } catch (StreamCancelledException e) {
+            // 客户端断开：不计费，但留一条 CANCELLED 流水便于统计中断率
+            usageService.record(userId, model, SOURCE_STREAM, prompt, reply.toString(),
+                    System.currentTimeMillis() - start, "CANCELLED", "client disconnected");
+            throw e;
+        } catch (ProviderException e) {
+            usageService.record(userId, model, SOURCE_STREAM, prompt, reply.toString(),
+                    System.currentTimeMillis() - start, "FAILED", e.getMessage());
+            throw e;
         } catch (RuntimeException e) {
             usageService.record(userId, model, SOURCE_STREAM, prompt, reply.toString(),
-                    System.currentTimeMillis() - start, false, e.getMessage());
+                    System.currentTimeMillis() - start, "FAILED", e.getMessage());
             throw e;
         }
     }

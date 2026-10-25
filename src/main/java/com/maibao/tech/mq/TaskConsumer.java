@@ -1,6 +1,7 @@
 package com.maibao.tech.mq;
 
 import java.io.IOException;
+import java.time.Instant;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +12,8 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
+
+import com.maibao.tech.mq.domain.OutboxMessage;
 
 import com.rabbitmq.client.Channel;
 
@@ -35,6 +38,7 @@ public class TaskConsumer {
 
     private final TaskProcessor processor;
     private final FailedTaskRepository failedTaskRepository;
+    private final OutboxRepository outboxRepository;
     private final RabbitTemplate rabbitTemplate;
     private final MeterRegistry meterRegistry;
     private final String exchange;
@@ -43,6 +47,7 @@ public class TaskConsumer {
 
     public TaskConsumer(TaskProcessor processor,
                         FailedTaskRepository failedTaskRepository,
+                        OutboxRepository outboxRepository,
                         RabbitTemplate rabbitTemplate,
                         MeterRegistry meterRegistry,
                         @Value("${app.mq.exchange}") String exchange,
@@ -50,6 +55,7 @@ public class TaskConsumer {
                         @Value("${app.mq.max-retries:3}") int maxRetries) {
         this.processor = processor;
         this.failedTaskRepository = failedTaskRepository;
+        this.outboxRepository = outboxRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.meterRegistry = meterRegistry;
         this.exchange = exchange;
@@ -64,14 +70,26 @@ public class TaskConsumer {
         try {
             processor.process(message);
             channel.basicAck(tag, false);
+            markConsumed(message);
             meterRegistry.counter("mq.consume.success").increment();
         } catch (DataIntegrityViolationException duplicated) {
             // 唯一约束挡住了重复投递：这是幂等生效的正常路径，不是故障
             log.info("duplicate message, ack and skip: {}", message.taskId());
             channel.basicAck(tag, false);
+            markConsumed(message);
             meterRegistry.counter("mq.consume.duplicate").increment();
         } catch (Exception e) {
             handleFailure(message, channel, tag, attempt, e);
+        }
+    }
+
+    /** 消费回执写回 outbox，对账任务据此判断"已投递但没被消费" */
+    private void markConsumed(TaskMessage message) {
+        try {
+            outboxRepository.markConsumed(message.taskId(), OutboxMessage.CONSUMED,
+                    OutboxMessage.SENT, OutboxMessage.PENDING, Instant.now());
+        } catch (RuntimeException e) {
+            log.warn("failed to mark outbox consumed for {}: {}", message.taskId(), e.toString());
         }
     }
 

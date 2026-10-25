@@ -1,8 +1,9 @@
 package com.maibao.tech.adapter;
 
-import java.util.function.Consumer;
-
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
+import com.maibao.tech.adapter.domain.Capabilities;
 import com.maibao.tech.adapter.domain.ChatChunk;
 import com.maibao.tech.adapter.domain.ChatRequest;
 
@@ -10,9 +11,20 @@ import com.maibao.tech.adapter.domain.ChatRequest;
 @Component
 public class MockAdapter implements AiProviderAdapter {
 
+    private final long charDelayMs;
+
+    public MockAdapter(@Value("${app.provider.mock.char-delay-ms:15}") long charDelayMs) {
+        this.charDelayMs = charDelayMs;
+    }
+
     @Override
     public String name() {
         return "mock";
+    }
+
+    @Override
+    public Capabilities capabilities() {
+        return Capabilities.textOnly(8192);
     }
 
     @Override
@@ -21,13 +33,29 @@ public class MockAdapter implements AiProviderAdapter {
         return "[mock] 收到：" + prompt;
     }
 
+    /**
+     * 逐字推送并留出间隔，用来真实验证心跳、seq 与"客户端断开后停止推送"。
+     */
     @Override
-    public void stream(String appKeyRef, ChatRequest request, Consumer<ChatChunk> sink) {
+    public void stream(String appKeyRef, ChatRequest request, ChunkSink sink) {
         String full = chat(appKeyRef, request);
-        sink.accept(ChatChunk.reasoning("先理解问题，再组织回答。"));
+        sink.onChunk(ChatChunk.reasoning("先理解问题，再组织回答。"));
         for (char c : full.toCharArray()) {
-            sink.accept(ChatChunk.text(String.valueOf(c)));
+            if (sink.cancelled()) {
+                throw new StreamCancelledException();
+            }
+            sink.onChunk(ChatChunk.text(String.valueOf(c)));
+            sleepQuietly();
         }
-        sink.accept(ChatChunk.done());
+        sink.onChunk(ChatChunk.done());
+    }
+
+    private void sleepQuietly() {
+        try {
+            Thread.sleep(charDelayMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new StreamCancelledException();
+        }
     }
 }

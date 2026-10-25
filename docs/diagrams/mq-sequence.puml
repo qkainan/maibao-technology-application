@@ -1,5 +1,5 @@
 @startuml mq-sequence
-title MQ 链路：投递 → 确认 → 消费 → 重试 / 落表
+title MQ 链路：outbox → confirm → 消费 → 重试 / 死信 / 对账
 skinparam defaultFontName "Microsoft YaHei"
 skinparam shadowing false
 skinparam sequenceMessageAlign left
@@ -8,48 +8,57 @@ autonumber
 
 actor 客户端
 participant "TaskController" as TC
-participant "TaskDispatcher" as D
+participant "OutboxService" as OS
+database "mq_outbox" as OB
+participant "OutboxPublisher\n(@Scheduled 2s)" as OP
 participant "RabbitTemplate" as RT
-queue "RabbitMQ\nexchange / queue" as MQ
+queue "exchange / queue\n(配 DLX → DLQ)" as MQ
 participant "TaskConsumer" as CS
 participant "TaskProcessor" as TP
 database "processed_task\nfailed_task" as DB
-participant "MeterRegistry" as M
 
-客户端 -> TC : POST /api/task/submit?payload&taskId
-TC -> D : dispatch(TaskMessage)
-D -> RT : convertAndSend(persistent, mandatory)
+== 生产端：先落库，再投递 ==
+客户端 -> TC : POST /api/task/submit
+TC -> OS : enqueue(TaskMessage)
+OS -> OB : INSERT status=PENDING\n(message_id 唯一键)
+OS --> TC : taskId
+TC --> 客户端 : 已受理
+
+OP -> OB : SELECT status=PENDING\nAND next_retry_at <= now
+OP -> RT : convertAndSend(persistent, mandatory,\nCorrelationData=outboxId)
 RT -> MQ : publish
 MQ --> RT : confirm(ack / nack)
-RT -> M : mq.publish.confirm{result}
-note right of RT : nack 或不可路由时记 error
-TC --> 客户端 : taskId
+alt ack
+  RT -> OB : UPDATE status=SENT
+else nack
+  RT -> OB : UPDATE status=PENDING\nattempts+1，指数退避
+end
+RT -> OB : returns 未路由 → status=FAILED + 告警
 
+== 消费端：幂等在前，业务在后 ==
 MQ -> CS : deliver（手动 ack）
 CS -> CS : attempt = header[x-retry-count] 或 0
-CS -> TP : process(message)  @Transactional
-TP -> DB : INSERT processed_task(task_id)  唯一约束
+CS -> TP : process(message) @Transactional
+TP -> DB : INSERT processed_task(task_id)\n唯一约束
 alt 处理成功
   TP --> CS : commit
   CS -> MQ : basicAck
-  CS -> M : mq.consume.success
-else 唯一约束冲突（重复投递）
+  CS -> OB : status=CONSUMED（消费回执）
+else 唯一约束冲突
   DB --> TP : DataIntegrityViolationException
-  TP --> CS : 抛出
   CS -> MQ : basicAck（跳过）
-  CS -> M : mq.consume.duplicate
-else 业务抛异常
-  TP --> CS : 回滚（去重记录一并撤销）
+  CS -> OB : status=CONSUMED
+else 业务异常
   alt attempt < max-retries
-    CS -> RT : republish(x-retry-count = attempt+1)
+    CS -> RT : 重投（x-retry-count = attempt+1）
     RT -> MQ : publish
     CS -> MQ : basicAck（原消息）
-    CS -> M : mq.consume.retry
   else attempt >= max-retries
-    CS -> DB : INSERT failed_task(reason, attempts)
+    CS -> DB : INSERT failed_task
     CS -> MQ : basicNack(requeue=false)
-    CS -> M : mq.consume.failed
+    MQ -> MQ : DLX 路由到 DLQ
   end
 end
 
+note over OP : 对账（每分钟）：\nSENT 超时无回执 → 重新投递\nattempts 用尽 → FAILED
 @enduml

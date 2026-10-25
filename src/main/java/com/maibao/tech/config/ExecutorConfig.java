@@ -2,6 +2,8 @@ package com.maibao.tech.config;
 
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -19,6 +21,17 @@ import org.springframework.context.annotation.Configuration;
 public class ExecutorConfig {
 
     public record StreamExecutorHolder(ExecutorService executor) {
+    }
+
+    /** SSE 心跳调度：单线程足够，只负责每 15s 发一个注释帧 */
+    @Bean(name = "streamHeartbeatScheduler", destroyMethod = "shutdown")
+    public ScheduledExecutorService streamHeartbeatScheduler() {
+        AtomicInteger seq = new AtomicInteger();
+        return Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "sse-heartbeat-" + seq.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     @Bean

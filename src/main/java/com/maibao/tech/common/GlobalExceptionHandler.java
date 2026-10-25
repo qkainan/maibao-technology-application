@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+import com.maibao.tech.adapter.StreamCancelledException;
+import com.maibao.tech.adapter.domain.ProviderException;
 import com.maibao.tech.common.domain.ApiResponse;
 
 /**
@@ -29,6 +32,20 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleBiz(BizException e) {
         log.warn("biz error: code={} msg={}", e.getCode(), e.getMessage());
         return ApiResponse.fail(e.getCode(), e.getMessage());
+    }
+
+    /** 厂商错误已归一到 ProviderError，这里映射成业务码，前端按类型决定重试还是换 key */
+    @ExceptionHandler(ProviderException.class)
+    public ApiResponse<Void> handleProvider(ProviderException e) {
+        log.warn("provider error: type={} msg={}", e.error(), e.getMessage());
+        return ApiResponse.fail(e.error().code(), e.getMessage());
+    }
+
+    /** 客户端主动断开不是故障，别落成 500 */
+    @ExceptionHandler(StreamCancelledException.class)
+    public ApiResponse<Void> handleCancelled(StreamCancelledException e) {
+        log.debug("stream cancelled by client");
+        return ApiResponse.fail(4990, "client disconnected");
     }
 
     /**

@@ -37,6 +37,9 @@ class TaskConsumerTest {
     private FailedTaskRepository failedTaskRepository;
 
     @Mock
+    private OutboxRepository outboxRepository;
+
+    @Mock
     private RabbitTemplate rabbitTemplate;
 
     @Mock
@@ -46,7 +49,7 @@ class TaskConsumerTest {
 
     @BeforeEach
     void setUp() {
-        consumer = new TaskConsumer(processor, failedTaskRepository, rabbitTemplate,
+        consumer = new TaskConsumer(processor, failedTaskRepository, outboxRepository, rabbitTemplate,
                 new SimpleMeterRegistry(), "ex", "rk", MAX_RETRIES);
     }
 

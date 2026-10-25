@@ -58,8 +58,17 @@ app:
     exchange: maibao.task.exchange
     queue: maibao.task.queue
     routing-key: maibao.task
+    # 死信：重试耗尽的 nack 会路由到这里，而不是消失
+    dlx-exchange: maibao.task.dlx
+    dlq-queue: maibao.task.dlq
+    dlq-routing-key: maibao.task.dlq
     # 消费失败后的重试次数上限，超过后写 failed_task 并放弃消息
     max-retries: 3
+    # outbox：扫描间隔 / 对账间隔 / 重试上限 / 消费回执超时
+    outbox-scan-ms: 2000
+    outbox-reconcile-ms: 60000
+    outbox-max-attempts: 5
+    consume-timeout-seconds: 300
   publish:
     # 真实场景这里是调用发布接口；本项目用固定耗时模拟执行
     work-duration-ms: 200
@@ -79,7 +88,10 @@ app:
       base-url: https://api.openai.com/v1
       # 不建库里的密钥时，可直接配在 yml 或环境变量里
       api-key: ${OPENAI_API_KEY:}
-      timeout-ms: 60000
+      # 超时分层：建连 / 首字节 / 整体
+      connect-timeout-ms: 5000
+      first-byte-timeout-ms: 30000
+      overall-timeout-ms: 300000
   cost:
     currency: CNY
     # 每 1000 token 的价格；key 取 model 的前缀（mock / openai），default 兜底
