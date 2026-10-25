@@ -1,12 +1,7 @@
 package com.maibao.tech.usage;
 
-import com.maibao.tech.usage.util.CostAccumulator;
-import com.maibao.tech.usage.util.DetailBuffer;
-
-import com.maibao.tech.usage.util.CostCalculator;
-import com.maibao.tech.usage.util.TokenEstimator;
-
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -14,29 +9,31 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import com.maibao.tech.usage.config.CostProperties;
+import com.maibao.tech.usage.detail.DetailBuffer;
+import com.maibao.tech.usage.detail.DetailRecord;
 import com.maibao.tech.usage.domain.CostAccounting;
 import com.maibao.tech.usage.domain.CostView;
 import com.maibao.tech.usage.domain.QueryLogView;
 import com.maibao.tech.usage.domain.UsageSummaryView;
 import com.maibao.tech.usage.domain.UserQueryLog;
+import com.maibao.tech.usage.redis.CostRedisRepository;
 import com.maibao.tech.usage.repository.CostAccountingRepository;
 import com.maibao.tech.usage.repository.UserQueryLogRepository;
 
 /**
- * 对话埋点：明细进本地批量队列，成本只累加到 Redis。
+ * 对话埋点：明细入本地缓冲、成本写 Redis —— 两件事都不在请求线程碰热路径。
  *
- * <p>两件事都不碰数据库的热路径：</p>
  * <ul>
- *   <li>明细：{@link DetailBuffer} 每 200ms 批量 INSERT（IDENTITY 主键下 JPA 批量会失效，所以走 JdbcTemplate）；</li>
- *   <li>成本：{@link CostAccumulator} 一次 Redis pipeline，{@link CostFlushJob} 每分钟覆盖写落库。</li>
+ *   <li>明细：{@link DetailBuffer} 每 200ms 攒一批，走 MQ 或直写库里；</li>
+ *   <li>成本：一次 Redis pipeline 累加，{@code CostFlushJob} 每分钟覆盖写落库。</li>
  * </ul>
  *
- * <p>埋点是旁路：任何一步失败都只告警，不影响对话本身。</p>
+ * <p>埋点是旁路：任一步失败都只告警，不影响对话本身。</p>
  */
 @Service
 public class UsageService {
@@ -52,7 +49,7 @@ public class UsageService {
     private final CostAccountingRepository costRepository;
     private final TokenEstimator estimator;
     private final CostCalculator calculator;
-    private final CostAccumulator accumulator;
+    private final CostRedisRepository costRedis;
     private final DetailBuffer detailBuffer;
     private final ZoneId zone;
 
@@ -60,16 +57,16 @@ public class UsageService {
                         CostAccountingRepository costRepository,
                         TokenEstimator estimator,
                         CostCalculator calculator,
-                        CostAccumulator accumulator,
+                        CostRedisRepository costRedis,
                         DetailBuffer detailBuffer,
-                        @Value("${app.cost.zone:Asia/Shanghai}") String zone) {
+                        CostProperties properties) {
         this.queryLogRepository = queryLogRepository;
         this.costRepository = costRepository;
         this.estimator = estimator;
         this.calculator = calculator;
-        this.accumulator = accumulator;
+        this.costRedis = costRedis;
         this.detailBuffer = detailBuffer;
-        this.zone = ZoneId.of(zone);
+        this.zone = ZoneId.of(properties.getZone());
     }
 
     public void record(String userId, String model, String source, String prompt, String reply,
@@ -82,22 +79,19 @@ public class UsageService {
                 ? calculator.amount(model, promptTokens, completionTokens)
                 : BigDecimal.ZERO;
 
-        UserQueryLog row = new UserQueryLog(UUID.randomUUID().toString(), uid, model, source,
+        DetailRecord detail = new DetailRecord(UUID.randomUUID().toString(), uid, model, source,
                 truncate(prompt, MAX_PROMPT), truncate(reply, MAX_REPLY),
                 promptTokens, completionTokens, cost,
                 (int) Math.min(Integer.MAX_VALUE, Math.max(0, latencyMs)),
-                status, truncate(error, MAX_ERROR));
+                status, truncate(error, MAX_ERROR), Instant.now());
 
-        // ① 明细：只入本地队列，不做 IO
-        detailBuffer.offer(row);
+        detailBuffer.offer(detail);
 
         if (!billable) {
             return;
         }
-
-        // ② 成本：一次 Redis pipeline；失败只告警（聚合表由落盘 Job 兜底）
         try {
-            accumulator.accumulate(uid, model, LocalDate.now(zone), promptTokens, completionTokens, cost);
+            costRedis.increase(uid, model, LocalDate.now(zone), promptTokens, completionTokens, cost);
         } catch (RuntimeException e) {
             log.warn("cost accumulate failed user={} model={}: {}", uid, model, e.toString());
         }

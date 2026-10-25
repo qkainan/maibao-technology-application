@@ -1,10 +1,10 @@
-package com.maibao.tech.usage.util;
+package com.maibao.tech.usage;
 
 import java.math.BigDecimal;
 
 import com.maibao.tech.common.BizException;
 
-/** 超出当日配额：业务码 4029，前端据此提示并引导明日再试/提额。 */
+/** 超出当日配额：业务码 4029，前端据此提示并引导明日再试或提额。 */
 public class QuotaExceededException extends BizException {
 
     public static final int CODE = 4029;

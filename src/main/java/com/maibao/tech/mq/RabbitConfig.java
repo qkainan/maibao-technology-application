@@ -1,6 +1,7 @@
 package com.maibao.tech.mq;
 
 import com.maibao.tech.mq.outbox.repository.OutboxRepository;
+import com.maibao.tech.usage.config.CostProperties;
 
 import java.time.Instant;
 
@@ -13,6 +14,7 @@ import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.amqp.RabbitTemplateCustomizer;
 import org.springframework.context.annotation.Bean;
@@ -83,6 +85,46 @@ public class RabbitConfig {
     @Bean
     public Binding deadLetterBinding(Queue deadLetterQueue, DirectExchange deadLetterExchange) {
         return BindingBuilder.bind(deadLetterQueue).to(deadLetterExchange).with(dlqRoutingKey);
+    }
+
+
+    // ---------- 明细落库：独立拓扑，量级是"每 200ms 一条批量消息" ----------
+
+    @Bean
+    public DirectExchange detailExchange(CostProperties properties) {
+        return new DirectExchange(properties.getDetail().getExchange(), true, false);
+    }
+
+    @Bean
+    public Queue detailQueue(CostProperties properties) {
+        return QueueBuilder.durable(properties.getDetail().getQueue())
+                .deadLetterExchange(properties.getDetail().getDlxExchange())
+                .deadLetterRoutingKey(properties.getDetail().getDlqRoutingKey())
+                .build();
+    }
+
+    @Bean
+    public Binding detailBinding(@Qualifier("detailQueue") Queue queue,
+                                 @Qualifier("detailExchange") DirectExchange exchange,
+                                 CostProperties properties) {
+        return BindingBuilder.bind(queue).to(exchange).with(properties.getDetail().getRoutingKey());
+    }
+
+    @Bean
+    public DirectExchange detailDeadLetterExchange(CostProperties properties) {
+        return new DirectExchange(properties.getDetail().getDlxExchange(), true, false);
+    }
+
+    @Bean
+    public Queue detailDeadLetterQueue(CostProperties properties) {
+        return QueueBuilder.durable(properties.getDetail().getDlqQueue()).build();
+    }
+
+    @Bean
+    public Binding detailDeadLetterBinding(@Qualifier("detailDeadLetterQueue") Queue queue,
+                                           @Qualifier("detailDeadLetterExchange") DirectExchange exchange,
+                                           CostProperties properties) {
+        return BindingBuilder.bind(queue).to(exchange).with(properties.getDetail().getDlqRoutingKey());
     }
 
     @Bean

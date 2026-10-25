@@ -1,4 +1,4 @@
-package com.maibao.tech.usage.util;
+package com.maibao.tech.usage;
 
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,16 +1,13 @@
-package com.maibao.tech.usage;
-
-import com.maibao.tech.usage.util.CostProperties;
-import com.maibao.tech.usage.util.CostRedisStore;
+package com.maibao.tech.usage.job;
 
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,14 +15,19 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.maibao.tech.usage.config.CostProperties;
+import com.maibao.tech.usage.redis.CostAggregate;
+import com.maibao.tech.usage.redis.CostRedisRepository;
+import com.maibao.tech.usage.support.Amounts;
+
 /**
  * 成本落盘：把 Redis 的当日累计<b>覆盖写</b>到 {@code cost_accounting}。
  *
- * <p><b>为什么是覆盖写而不是累加</b>：Redis 里存的就是"当日截至目前的累计值"，
- * 落盘只是把它同步到 DB。用 {@code cost_amount = VALUES(cost_amount)} 覆盖，
- * 重跑任意多次结果都一样 —— <b>幂等不需要去重表</b>。</p>
+ * <p>为什么是覆盖写而不是累加：Redis 里存的就是"当日截至目前的累计值"，落盘只是同步。
+ * {@code cost_amount = VALUES(cost_amount)} 让重跑任意多次结果一致 ——
+ * <b>幂等靠覆盖状态，不需要去重表</b>。</p>
  *
- * <p>日结（默认 00:05）：最后落一次盘 → 删当日 Redis key → 清理过期明细。</p>
+ * <p>日结（默认 00:05）：最后落一次盘 → 删当日 Redis 键 → 清理过期明细。</p>
  */
 @Component
 public class CostFlushJob {
@@ -47,50 +49,40 @@ public class CostFlushJob {
                 updated_at = VALUES(updated_at)
             """;
 
-    private final CostRedisStore store;
+    private final CostRedisRepository costRedis;
     private final JdbcTemplate jdbc;
-    private final CostProperties props;
+    private final CostProperties properties;
+    private final ZoneId zone;
 
-    public CostFlushJob(CostRedisStore store, JdbcTemplate jdbc, CostProperties props) {
-        this.store = store;
+    public CostFlushJob(CostRedisRepository costRedis, JdbcTemplate jdbc, CostProperties properties) {
+        this.costRedis = costRedis;
         this.jdbc = jdbc;
-        this.props = props;
+        this.properties = properties;
+        this.zone = ZoneId.of(properties.getZone());
     }
 
     @Scheduled(fixedDelayString = "${app.cost.flush-ms:60000}", initialDelay = 30000)
     public void flushToday() {
-        flush(LocalDate.now(props.zoneId()));
+        flush(LocalDate.now(zone));
     }
 
-    /** @return 落盘的行数（活跃的 user×model 组合数） */
+    /** @return 落盘的行数（活跃的 user × model 组合数） */
     public int flush(LocalDate day) {
-        Map<String, long[]> snapshot = store.aggregate(day);
+        List<CostAggregate> snapshot = costRedis.aggregate(day);
         if (snapshot.isEmpty()) {
             return 0;
         }
-        String currency = props.getCurrency();
+        String currency = properties.getCurrency();
         Timestamp now = Timestamp.from(Instant.now());
+        Date statDate = Date.valueOf(day);
         List<Object[]> args = new ArrayList<>(snapshot.size());
-        for (Map.Entry<String, long[]> entry : snapshot.entrySet()) {
-            String owner = entry.getKey();
-            int idx = owner.indexOf('|');
-            if (idx <= 0 || idx == owner.length() - 1) {
-                continue;
-            }
-            String userId = owner.substring(0, idx);
-            String model = owner.substring(idx + 1);
-            long[] agg = entry.getValue();
-            long promptTokens = agg[1];
-            long completionTokens = agg[2];
-            long count = Math.max(agg[3], 0L);
-            BigDecimal cost = CostRedisStore.fromL1e8(agg[0]);
+        for (CostAggregate agg : snapshot) {
+            long totalTokens = agg.promptTokens() + agg.completionTokens();
+            BigDecimal cost = Amounts.toYuan(agg.costScaled());
             args.add(new Object[]{
-                    userId, model, Date.valueOf(day), count,
-                    promptTokens, completionTokens, promptTokens + completionTokens,
+                    agg.userId(), agg.model(), statDate, agg.count(),
+                    agg.promptTokens(), agg.completionTokens(), totalTokens,
                     cost, currency, now});
-        }
-        if (args.isEmpty()) {
-            return 0;
         }
         jdbc.batchUpdate(UPSERT_SQL, args);
         log.info("cost flushed: day={} rows={}", day, args.size());
@@ -99,11 +91,12 @@ public class CostFlushJob {
 
     @Scheduled(cron = "${app.cost.settle-cron:0 5 0 * * *}")
     public void settleYesterday() {
-        LocalDate yesterday = LocalDate.now(props.zoneId()).minusDays(1);
+        LocalDate yesterday = LocalDate.now(zone).minusDays(1);
         int rows = flush(yesterday);
-        store.deleteDay(yesterday);
-        int cleaned = cleanupDetails(yesterday.minusDays(props.getDetail().getRetainDays()));
-        log.info("cost settled: day={} rows={} redisCleared=true detailCleaned={}", yesterday, rows, cleaned);
+        costRedis.deleteDay(yesterday);
+        int cleaned = cleanupDetails(yesterday.minusDays(properties.getDetail().getRetainDays()));
+        log.info("cost settled: day={} rows={} redisCleared=true detailCleaned={}",
+                yesterday, rows, cleaned);
     }
 
     /** 明细只保留热数据；生产应换成按天分区 + DROP PARTITION。 */

@@ -131,10 +131,19 @@ app:
       ttl-days: 3
     # 明细批量写
     detail:
+      # mq: 攒批发 MQ（崩溃不丢、可重投）；local: 本地直写（不依赖 broker）
+      mode: mq
+      flush-ms: 200
       batch-size: 2000
       queue-capacity: 20000
       retain-days: 7
-      flush-ms: 200
+      exchange: maibao.detail.exchange
+      queue: maibao.detail.queue
+      routing-key: maibao.detail
+      dlx-exchange: maibao.detail.dlx
+      dlq-queue: maibao.detail.dlq
+      dlq-routing-key: maibao.detail.dlq
+      max-retries: 3
 
 logging:
   level:
