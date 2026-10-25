@@ -22,7 +22,7 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 | 多线程与锁（状态抢占、乐观锁、卡死回收） | `publish/` — `PublishRepository.claim`、`PublishExecutor` |
 | 密钥加密（密文入库 + 归属校验） | `security/` — `AesGcmCipher`、`KeyVaultService` |
 | 构建与发布（分层缓存 + 多阶段） | `Dockerfile`、`deploy/nginx.conf`、`.github/workflows/ci.yml` |
-| 用量查询（明细翻页 + 按天聚合报表） | `usage/` — `UsageService`、`TokenEstimator`、`CostCalculator` |
+| 用量查询（明细翻页 + 按天聚合报表） | `usage/` — `UsageService`、`CostRedisStore`；`usage/util/` — `TokenEstimator`、`CostCalculator` |
 
 每个技术点的设计取舍见 [`docs/01-设计取舍.md`](docs/01-设计取舍.md)。
 
@@ -219,7 +219,7 @@ src/main/java/com/maibao/tech/
 ├── mq/           RabbitMQ 可靠性 + outbox（outbox/ 独立成包，默认关闭）
 ├── publish/      发布状态机、执行器、乐观锁抢占与超时回收
 ├── security/     AES-GCM 加密、密钥归属校验
-├── usage/        对话埋点、Redis 成本累加、明细批量落库、用户配额
+├── usage/        对话埋点、Redis 成本累加、明细批量落库、用户配额（工具类在 usage/util/）
 ├── config/       线程池等基础配置
 └── common/       统一响应、异常处理
 ```
