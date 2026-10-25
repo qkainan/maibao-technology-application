@@ -22,7 +22,7 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 | 多线程与锁（状态抢占、乐观锁、卡死回收） | `publish/` — `PublishRepository.claim`、`PublishExecutor` |
 | 密钥加密（密文入库 + 归属校验） | `security/` — `AesGcmCipher`、`KeyVaultService` |
 | 构建与发布（分层缓存 + 多阶段） | `Dockerfile`、`deploy/nginx.conf`、`.github/workflows/ci.yml` |
-| 用量查询（明细翻页 + 按天聚合报表） | `usage/` — `UsageService`、`CostRedisStore`；`usage/util/` — `TokenEstimator`、`CostCalculator` |
+| 用量查询（明细翻页 + 按天聚合报表） | `usage/` — `UsageService`、`CostQuotaService`；`usage/util/` — 计价、Redis 累加、明细缓冲、配置与配额异常 |
 
 每个技术点的设计取舍见 [`docs/01-设计取舍.md`](docs/01-设计取舍.md)。
 

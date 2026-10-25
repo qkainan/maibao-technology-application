@@ -1,5 +1,8 @@
 package com.maibao.tech.usage;
 
+import com.maibao.tech.usage.util.CostProperties;
+import com.maibao.tech.usage.util.CostRedisStore;
+
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;

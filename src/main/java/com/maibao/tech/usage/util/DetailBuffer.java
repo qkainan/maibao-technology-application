@@ -1,4 +1,4 @@
-package com.maibao.tech.usage;
+package com.maibao.tech.usage.util;
 
 import java.sql.Timestamp;
 import java.util.ArrayList;
