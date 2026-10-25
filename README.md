@@ -17,11 +17,12 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 | 适配器模式统一多厂商出入参 | `adapter/` — `AiProviderAdapter` + `AdapterRegistry`，带 `capabilities()` 与错误码归一 |
 | 循环节点（循环变量 / 终止条件 / 轮次上限） | `workflow/LoopNode.java` |
 | SSE 流式链路（真流式 + 帧解析 + 心跳 + seq + 取消） | `chat/stream/` — `OpenAiSseDecoder`、`SseStreamSession` |
-| RabbitMQ（outbox + 成本事件 + 重试 + 死信 + 对账） | `mq/` — `OutboxPublisher`、`usage/CostConsumer`、`CostProcessor` |
+| RabbitMQ 可靠性（confirm / returns / DLX / 重试 / 幂等 / outbox，**备用**） | `mq/outbox/` — `OutboxPublisher`、`OutboxService` |
+| 成本记账（Redis 累加 + 明细批量 + 用户配额） | `usage/` — `CostRedisStore`、`DetailBuffer`、`CostFlushJob`、`CostQuotaService` |
 | 多线程与锁（状态抢占、乐观锁、卡死回收） | `publish/` — `PublishRepository.claim`、`PublishExecutor` |
 | 密钥加密（密文入库 + 归属校验） | `security/` — `AesGcmCipher`、`KeyVaultService` |
 | 构建与发布（分层缓存 + 多阶段） | `Dockerfile`、`deploy/nginx.conf`、`.github/workflows/ci.yml` |
-| 用量与成本（对话埋点 + 按天聚合） | `usage/` — `UsageService`、`TokenEstimator`、`CostCalculator` |
+| 用量查询（明细翻页 + 按天聚合报表） | `usage/` — `UsageService`、`TokenEstimator`、`CostCalculator` |
 
 每个技术点的设计取舍见 [`docs/01-设计取舍.md`](docs/01-设计取舍.md)。
 
@@ -80,23 +81,34 @@ mvn spring-boot:run
 | 业务错误（如密钥归属不匹配） | 200 | `{"code":4030,...}`，业务码优先 |
 | 未预期异常 | 200 | `{"code":500,"message":"internal error"}` |
 
-### 成本事件与 MQ
+### 成本记账与配额（Redis 累加 + 明细批量）
 
-MQ 现在只承载**成本事件**：一次成功对话产生一条消息，聚合由消费者异步完成。对话接口只写明细，不等聚合。
+Agent 场景下**一次用户操作会打出上百次模型调用**，对话 QPS 上千。所以成本链路不能"一次调用一条消息、一条消息一次 `UPDATE`"——那是 6 次 DB 写/条，`cost_accounting` 单行更新会变成热点。现在把高频写成两级：
 
-1. `UsageService.record` 在**同一个事务**里写 `user_query_log`（权威）和 `mq_outbox`（`PENDING`）；
-2. 投递器每 2s 扫 `PENDING`，先用 `next_retry_at` 当租约做 CAS 抢占（`UPDATE ... WHERE id=? AND status='PENDING' AND next_retry_at<=now`），**影响行数为 1 才发送**——多实例同时扫也不会重复投递；
-3. 发送后等 confirm `ack` 才标 `SENT`；
-4. `CostConsumer` 消费：`cost_message_log` 唯一键去重 → `CostAccumulator` 累加 `cost_accounting`；
-5. 消费成功后回执 `CONSUMED`；
-6. 失败带 `x-retry-count` 重投（最多 3 次）；重试耗尽写 `failed_task`、把 outbox 标 `FAILED` 并 nack → `maibao.cost.dlq`；
-7. 对账任务每分钟跑 outbox：`SENT` 超时无回执 → 重投；每天 02:30 对账 T-1 的明细与聚合。
+1. `UsageService.record` 里**明细只入本地队列**（`DetailBuffer`），成本只打一次 Redis pipeline —— 对话线程**零 DB 往返**；
+2. Redis 按天分桶两个 Hash：`maibao:cost:acc:{date}` 存 `userId|model|cost|pt|ct|cnt`，`maibao:cost:user:{date}` 存该用户当日已用（给配额校验 O(1) 读）；金额用 `long × 1e8` 存整数，避免浮点漂移；
+3. `DetailBuffer` 每 200ms 用 `JdbcTemplate.batchUpdate` 批量落 `user_query_log`（JPA + `IDENTITY` 主键会关掉 JDBC 批量，`saveAll` 实际是逐条插）；队列满时**丢弃并计数**，绝不阻塞对话；
+4. `CostFlushJob` 每分钟 `HGETALL` → **覆盖写** `cost_accounting`：`ON DUPLICATE KEY UPDATE cost_amount = VALUES(cost_amount)`。Redis 里存的就是"当日累计"，落盘只是同步，**重跑任意多次结果一致 → 幂等不需要去重表**；
+5. 每天 00:05 日结：最后落盘 → 删当日 Redis key → 清理 7 天前明细。
 
-开关：`app.cost.async-enabled=false` 退回同步累加（回滚路径，已验证账也对得上）。
+**用户配额**：`CostQuotaService.check(userId)` 在 `ChatService` 入口执行，读 Redis 的当日已用，超限抛 `QuotaExceededException`（业务码 **4029**，message 带"额度 X 已用 Y"），**不调模型、不产生费用**。Redis 不可用时**放行** —— 配额是成本控制，不是安全边界，不能因为缓存故障阻断业务。查询接口 `GET /api/quota?userId=u1`。
 
-> **任务链路当前停用**：`/api/task/submit` 已删除，`TaskConsumer/TaskProcessor` 由 `app.task.enabled=false` 关闭，表和队列资产保留——等长任务模型接入后，按适配器能力再启用。原因是"提交后拿不到结果"的异步任务没有真实业务价值。
+```yaml
+app:
+  cost:
+    zone: Asia/Shanghai
+    quota: { enabled: true, daily-per-user: 100.0 }
+    redis: { key-prefix: maibao:cost, ttl-days: 3 }
+    flush-ms: 60000            # 落盘间隔
+    settle-cron: "0 5 0 * * *"
+    detail: { batch-size: 2000, queue-capacity: 20000, retain-days: 7 }
+```
 
-指标：`mq.publish.confirm`、`mq.publish.returned`、`mq.cost.consume.success`、`mq.cost.consume.duplicate`、`mq.cost.consume.retry`、`mq.cost.consume.failed`、`cost.reconcile.mismatch`（`GET /actuator/metrics/{name}`）。
+> **为什么成本不走 MQ**：一条消息一次累加是"不可合并"的做法，而成本累加天然可合并（`+= sum`）。1000 QPS 下 outbox 逐条投递要 6 次 DB 写/条（约 6000 写/秒），Redis 只要一次 O(1) 内存操作。**可合并的计数走 Redis，必须逐条持久化、要跨系统的才走 MQ。**
+>
+> **outbox 保留但默认关闭**（`app.mq.outbox-enabled=false`）：代码已收进 `mq/outbox/`，等出现"必须强投递"的消息（通知、扣费、跨系统事件）再启用。任务链路同理：`/api/task/submit` 已删除，`TaskConsumer/TaskProcessor` 由 `app.task.enabled=false` 关闭，表和队列资产保留。
+
+指标：`cost.reconcile.lag`、`mq.publish.confirm`、`mq.publish.returned`（`GET /actuator/metrics/{name}`）。
 
 ### 数据库（MySQL 8）
 
@@ -108,7 +120,7 @@ spring:
     password: 你的密码
 ```
 
-表结构以 [`docs/schema.sql`](docs/schema.sql) 为准（应用侧 `ddl-auto: validate`，只校验不改结构），共 8 张表：`publish_record`、`processed_task`、`failed_task`、`mq_outbox`、`cost_message_log`、`api_key`、`user_query_log`、`cost_accounting`。字段、索引与设计说明见 [`docs/03-数据库设计.md`](docs/03-数据库设计.md)。
+表结构以 [`docs/schema.sql`](docs/schema.sql) 为准（应用侧 `ddl-auto: validate`，只校验不改结构），共 7 张表：`publish_record`、`processed_task`、`failed_task`、`mq_outbox`（备用）、`api_key`、`user_query_log`、`cost_accounting`。字段、索引与设计说明见 [`docs/03-数据库设计.md`](docs/03-数据库设计.md)。
 
 不装 MySQL 时可以用 H2 profile：
 
@@ -146,7 +158,7 @@ rabbitmqctl set_permissions -p /maibao maibao ".*" ".*" ".*"
 
 管理台等价操作：`Admin → Virtual Hosts → Add`，Name 填 `/maibao`；再建用户并 `Set permission`，三个正则都填 `.*`。
 
-broker 不可用时应用仍能启动（监听容器会在后台重连），对话接口照常返回——明细和 outbox 先落库，成本消息等 broker 恢复后自动补投；`/actuator/health` 会变 DOWN——这是预期信号。
+broker 不可用时应用仍能启动（监听容器会在后台重连），对话接口照常返回。**成本链路已经不走 MQ**，所以 broker 挂了不影响记账；outbox 组件默认关闭，不产生流量。`/actuator/health` 会因 rabbit 健康检查变 DOWN——这是预期信号，可用 `management.health.rabbit.enabled=false` 关掉。
 
 可靠性相关的几层：
 
@@ -177,7 +189,7 @@ spring:
 - 每线程 `prefetch: 2`，未确认窗口约 8 条，进程崩溃时最多重投这 8 条（`processed_task` 幂等兜底）；
 - 实测 20 条任务：单线程 `0.40s`（≈50 条/秒），4 并发 `0.13s`（≈155 条/秒）。
 
-> 并发再往上会被 `cost_accounting` 的单行更新卡住：同一 `(user, model, date)` 是热点行，实测 4 并发只拿到约 3 倍提升。要更高吞吐得把按天汇总改成异步批量或分桶。
+> 成本累加已改为 Redis，`cost_accounting` 不再是并发热点：落盘是每分钟一次的覆盖写，与对话 QPS 解耦。（改造前同一 `(user, model, date)` 是单行热点，4 并发只拿到约 3 倍提升。）
 
 ---
 
@@ -204,10 +216,10 @@ src/main/java/com/maibao/tech/
 ├── adapter/      适配器模式：多厂商模型统一出入参
 ├── chat/         对话服务 + SSE（含帧解析、增量归一）
 ├── workflow/     节点模型、循环节点、图校验
-├── mq/           RabbitMQ 生产/消费、确认与重试、失败落表
+├── mq/           RabbitMQ 可靠性 + outbox（outbox/ 独立成包，默认关闭）
 ├── publish/      发布状态机、执行器、乐观锁抢占与超时回收
 ├── security/     AES-GCM 加密、密钥归属校验
-├── usage/        对话埋点与成本聚合（流水 + 按天累计）
+├── usage/        对话埋点、Redis 成本累加、明细批量落库、用户配额
 ├── config/       线程池等基础配置
 └── common/       统一响应、异常处理
 ```
@@ -217,10 +229,11 @@ src/main/java/com/maibao/tech/
 | 模块 | `domain/` 内容 |
 |---|---|
 | `adapter/domain` | `ChatRequest`、`ChatMessage`、`ChatChunk`（统一出入参）、`Capabilities`、`ProviderError` |
-| `mq/domain` | `TaskMessage`（消息体）、`ProcessedTask`、`FailedTask`、`OutboxMessage`（PO） |
+| `mq/domain` | `TaskMessage`（消息体）、`ProcessedTask`、`FailedTask`（PO） |
+| `mq/outbox/domain` | `OutboxMessage`（PO，outbox 独立包） |
 | `publish/domain` | `PublishRecord`（PO）、`PublishStatus`（枚举） |
 | `security/domain` | `ApiKeyEntity`（PO） |
-| `usage/domain` | `UserQueryLog`、`CostAccounting`（PO）、`QueryLogView`、`CostView`、`UsageSummaryView`（VO） |
+| `usage/domain` | `UserQueryLog`、`CostAccounting`（PO）、`QueryLogView`、`CostView`、`UsageSummaryView`、`QuotaView`（VO） |
 | `common/domain` | `ApiResponse`（统一响应 VO） |
 
 **数据访问也按模块分开放**：各自的 `repository/` 子包只放 Spring Data 接口，条件更新、唯一约束这类"并发语义"直接写在接口的 `@Query` 上：
@@ -228,7 +241,8 @@ src/main/java/com/maibao/tech/
 ```
 usage/repository/UserQueryLogRepository.java
 usage/repository/CostAccountingRepository.java
-mq/repository/{ProcessedTask,FailedTask,Outbox}Repository.java
+mq/repository/{ProcessedTask,FailedTask}Repository.java
+mq/outbox/repository/OutboxRepository.java
 publish/repository/PublishRepository.java
 security/repository/ApiKeyRepository.java
 ```
@@ -241,7 +255,7 @@ security/repository/ApiKeyRepository.java
 mvn test
 ```
 
-36 个用例全部通过（2026-10-25）。
+33 个用例全部通过（2026-10-25）。
 
 覆盖的关键点：
 - `SseFrameParserTest` — 半包 / 粘包 / 多帧切分
@@ -258,12 +272,12 @@ mvn test
 
 ## 边界与现状
 
-**已验证**：45 个单测通过；8 张表由 `schema.sql` 建好并通过 `validate`；发布链路抢占→执行→收尾与卡死回收、SSE 真流式（32 帧带 seq / 15s 心跳 / 断连落 CANCELLED）、成本事件 outbox→消费→聚合（重复投递只累加一次）、`async-enabled=false` 回滚路径、发布/密钥/用量接口均实测通过。
+**已验证**：33 个单测通过；7 张表由 `schema.sql` 建好并通过 `validate`；发布链路抢占→执行→收尾与卡死回收、SSE 真流式（32 帧带 seq / 15s 心跳 / 断连落 CANCELLED）、成本 Redis 累加 + 分钟级覆盖写落盘、配额拒绝（业务码 4029）、发布/密钥/用量接口均实测通过。
 
 **已知缺口**（如实标注，不是待修的 bug）：
 
 1. 没有 `@SpringBootTest` 集成测试，状态机与消费重试靠单测 + 手工端到端验证。
-2. 成本消息"每次对话一条"的量级没有压测；真打模型且 QPS 上来后，再考虑按 `(user, model, 分钟)` 聚合。
+2. 成本链路按 **1000 QPS** 设计（Redis 累加 + 分钟级落盘），但没有压测脚本；明细表还没做按天分区，现在用 `DELETE` 清理。
 3. 任务链路停用中：`task_result` 表、适配器 `capabilities()` 的异步能力、长任务"发起 + 回调"语义都还没做。
 4. 重试是"带计数重新投递"，没有延迟重试（死信队列已补，延迟要靠额外插件或延迟队列）。
 
@@ -284,7 +298,7 @@ mvn test
 | 文件 | 内容 |
 |---|---|
 | [`docs/01-设计取舍.md`](docs/01-设计取舍.md) | 每个技术点为什么这么设计、常见疑问 |
-| [`docs/02-时序图.md`](docs/02-时序图.md) | 发布链路与 MQ 链路的时序图（PNG + PlantUML 源） |
+| [`docs/02-时序图.md`](docs/02-时序图.md) | 发布 / 成本 / SSE 链路的时序图（PNG + PlantUML 源） |
 | [`docs/03-数据库设计.md`](docs/03-数据库设计.md) | 表结构、索引、计费口径 |
 | [`docs/04-缺陷记录.md`](docs/04-缺陷记录.md) | 已修复的并发/可靠性问题：复现、根因、回归 |
 | [`docs/schema.sql`](docs/schema.sql) | 建表脚本（结构唯一来源） |

@@ -1,5 +1,5 @@
 @startuml cost-sequence
-title 成本事件链路：明细 + outbox → MQ → 幂等累加 → 对账
+title 成本链路：配额校验 → 明细入队 + Redis 累加 → 分钟级覆盖写
 skinparam defaultFontName "Microsoft YaHei"
 skinparam shadowing false
 skinparam sequenceMessageAlign left
@@ -9,42 +9,32 @@ autonumber
 actor 客户端
 participant "ChatController" as CC
 participant "ChatService" as CS
+participant "CostQuotaService" as Q
 participant "UsageService" as US
-database "user_query_log" as LOG
-database "mq_outbox" as OB
-participant "OutboxPublisher\n(2s 扫描 + 租约)" as OP
-queue "maibao.cost.queue\n(DLX → DLQ)" as MQ
-participant "CostConsumer" as CON
-participant "CostProcessor" as CP
-database "cost_message_log" as DEDUP
-database "cost_accounting" as ACC
+participant "DetailBuffer\n(本地队列)" as DB
+collections "Redis\n(按天 Hash)" as R
+database "MySQL" as SQL
 
 客户端 -> CC : POST /api/chat
 CC -> CS : chat(userId, model, prompt)
-CS -> CS : adapter.chat()
-CS -> US : record(..., SUCCESS)
-US -> LOG : INSERT 明细\n（权威）
-US -> OB : INSERT outbox\n（同事务，exchange=maibao.cost.exchange）
-CS --> 客户端 : reply（不等成本）
-
-OP -> OB : SELECT PENDING + CAS 抢租约
-OP -> MQ : send(JSON bytes, persistent)
-MQ -> CON : deliver（手动 ack）
-
-CON -> CP : process(CostMessage)
-CP -> DEDUP : INSERT 去重\n（REQUIRES_NEW，唯一键）
-alt 新消息
-  CP -> ACC : UPDATE 累加\n（事务外，避免间隙锁）
-  CP --> CON : ok
-  CON -> MQ : basicAck
-  CON -> OB : markConsumed
-else 重复投递
-  DEDUP --> CP : 唯一键冲突
-  CP --> CON : 抛出
-  CON -> MQ : basicAck（跳过）
-  CON -> OB : markConsumed
+CS -> Q : check(userId)
+Q -> R : HGET cost:user:{date}
+R --> Q : 当日已用
+alt 已用 >= 额度
+  Q --> CS : throw 4029\n（不调模型、不产生费用）
+  CS --> 客户端 : 今日额度已用完
+else 未超限
+  CS -> CS : adapter.chat()
+  CS -> US : record(..., SUCCESS)
+  US -> DB : offer(row)  ← 只入队，无 IO
+  US -> R : pipeline HINCRBY×5\n（cost/pt/ct/cnt + 用户汇总）
+  CS --> 客户端 : reply（不等落盘）
 end
 
-note over CP : 失败 → 撤销去重锚点 → 重投\n重试耗尽 → failed_task + outbox FAILED + DLQ
-note over ACC : 每天 02:30：明细 SUM vs 聚合 SUM\n差异超阈值告警（只发现不自动修）
+note over DB : 每 200ms：drainTo → jdbc.batchUpdate\n（队列满则丢弃并计数，不阻塞对话）
+DB -> SQL : INSERT user_query_log（多值）
+note over R : cost:acc:{date} → userId|model|指标
+note over R : 每 60s：HGETALL → 覆盖写 cost_accounting\n（ON DUPLICATE KEY UPDATE，天然幂等）
+R -> SQL : UPSERT cost_accounting
+note over SQL : 每天 00:05：最后一次落盘 → DEL 当日 key → 清理 7 天前明细
 @enduml
