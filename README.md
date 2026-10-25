@@ -242,8 +242,8 @@ src/main/java/com/maibao/tech/
 | # | 文件 | 看什么 |
 |---|---|---|
 | 1 | `usage/UsageService` | 入口。`record()` 十几行就是全貌：明细入队 + 成本写 Redis |
-| 2 | `usage/CostProperties` | 有哪些配置：配额、Redis 键前缀、明细批量、价表 |
-| 3 | `usage/CostKeys` | Redis 键长什么样（`acc` / `user` 两个按天 Hash） |
+| 2 | `usage/util/CostProperties` | 有哪些配置：配额、Redis 键前缀、明细批量、价表 |
+| 3 | `usage/util/CostKeys` | Redis 键长什么样（`acc` / `user` 两个按天 Hash） |
 | 4 | `usage/CostRedisRepository` | 高频写怎么落 Redis：一次 pipeline、聚合快照、日结删键 |
 | 5 | `usage/CostFlushJob` | Redis 怎么变成 DB 行：每分钟**覆盖写** + 每日日结 |
 | 6 | `usage/CostReconcileJob` | 账对不对：Redis 累计 vs DB 聚合 |
