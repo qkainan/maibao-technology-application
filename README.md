@@ -1,6 +1,6 @@
 # maibao-technology-application
 
-> 一个 AI 应用平台的关键技术最小实现：多厂商模型适配、SSE 流式、工作流循环、异步任务、发布状态机与并发控制、密钥加密。每个点都拆成可运行、可单独验证的代码。
+> 一个 AI 应用平台的关键技术最小实现：多厂商模型适配、SSE 流式、工作流循环、异步任务、发布状态机与并发控制、密钥加密、用量与成本。每个点都拆成可运行、可单独验证的代码。
 
 技术栈：Java 17 · Spring Boot 3.2 · Spring Data JPA · MySQL 8（H2 可选）· RabbitMQ · Maven
 
@@ -17,13 +17,13 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 | 适配器模式统一多厂商出入参 | `adapter/` — `AiProviderAdapter` + `AdapterRegistry` |
 | 循环节点（循环变量 / 终止条件 / 轮次上限） | `workflow/LoopNode.java` |
 | SSE 流式链路（帧解析 + 增量归一） | `chat/stream/SseFrameParser.java`、`ChunkNormalizer.java` |
-| RabbitMQ（消息持久化 + 手动 ack + 消费幂等） | `mq/` — `RabbitTaskDispatcher`、`TaskConsumer`、`ProcessedTask` |
-| 多线程与锁（状态抢占、乐观锁） | `publish/` — `PublishRepository.casStatus` |
+| RabbitMQ（持久化 + confirm/returns + 重试 + 幂等） | `mq/` — `RabbitTaskDispatcher`、`TaskConsumer`、`TaskProcessor` |
+| 多线程与锁（状态抢占、乐观锁、卡死回收） | `publish/` — `PublishRepository.claim`、`PublishExecutor` |
 | 密钥加密（密文入库 + 归属校验） | `security/` — `AesGcmCipher`、`KeyVaultService` |
 | 构建与发布（分层缓存 + 多阶段） | `Dockerfile`、`deploy/nginx.conf`、`.github/workflows/ci.yml` |
 | 用量与成本（对话埋点 + 按天聚合） | `usage/` — `UsageService`、`TokenEstimator`、`CostCalculator` |
 
-每个技术点的设计取舍与常见疑问见 [`docs/01-技术点与代码对照.md`](docs/01-技术点与代码对照.md)。
+每个技术点的设计取舍见 [`docs/01-设计取舍.md`](docs/01-设计取舍.md)。
 
 ---
 
@@ -60,6 +60,24 @@ mvn spring-boot:run
 | GET | `/api/usage/cost?userId=u1` | 成本明细（模型 × 天） |
 | GET | `/api/usage/summary?userId=u1` | 累计请求数 / token / 成本 |
 
+### 错误响应
+
+| 场景 | HTTP | 响应体 |
+|---|---|---|
+| 路径/查询参数类型不匹配（例如把 `sk-...` 填进 `{id}`） | 400 | `{"code":4000,"message":"参数 id 需要 Long 类型，实际收到: ..."}` |
+| 缺少必填参数 | 400 | `{"code":4001,...}` |
+| 请求体不是合法 JSON | 400 | `{"code":4002,...}` |
+| 请求方法不支持（如用 GET 调 `POST /api/chat`） | 405 | `{"code":4005,...}` |
+| 静态资源或未知路径不存在（含 `/favicon.ico`） | 404 | 空 |
+| 业务错误（如密钥归属不匹配） | 200 | `{"code":4030,...}`，业务码优先 |
+| 未预期异常 | 200 | `{"code":500,"message":"internal error"}` |
+
+### 异步任务与失败处理
+
+- 消费失败不直接丢弃：带 `x-retry-count` 头重新投递，最多 `app.mq.max-retries`（默认 3）次；
+- 重试耗尽写 `failed_task` 表（`task_id` / `payload` / `reason` / `attempts`）再 nack，避免毒消息堵队列；
+- 指标：`mq.publish.confirm`、`mq.publish.returned`、`mq.consume.success`、`mq.consume.duplicate`、`mq.consume.retry`、`mq.consume.failed`（`GET /actuator/metrics/{name}`）。
+
 ### 数据库（MySQL 8）
 
 默认连 `maibao_technology_application`，账号 `root`；密码从 `application-local.yml`（已在 `.gitignore`）或环境变量 `DB_PASSWORD` 读取：
@@ -70,16 +88,7 @@ spring:
     password: 你的密码
 ```
 
-表结构以 [`docs/schema.sql`](docs/schema.sql) 为准（应用侧 `ddl-auto: validate`，只校验不改结构），共 6 张表：
-
-| 表 | 用途 |
-|---|---|
-| `publish_record` | 发布状态机（含 `idx_status_scheduled_at`） |
-| `processed_task` | MQ 消费去重（唯一约束） |
-| `failed_task` | 消费重试耗尽后的失败记录 |
-| `api_key` | 密钥密文与脱敏串 |
-| `user_query_log` | 每次 AI 对话的流水（token、成本、耗时、状态） |
-| `cost_accounting` | 成本按「用户 × 模型 × 天」聚合，唯一键 `uk_cost_user_model_date` |
+表结构以 [`docs/schema.sql`](docs/schema.sql) 为准（应用侧 `ddl-auto: validate`，只校验不改结构），共 6 张表：`publish_record`、`processed_task`、`failed_task`、`api_key`、`user_query_log`、`cost_accounting`。字段、索引与设计说明见 [`docs/03-数据库设计.md`](docs/03-数据库设计.md)。
 
 不装 MySQL 时可以用 H2 profile：
 
@@ -92,11 +101,20 @@ mvn spring-boot:run -Dspring-boot.run.profiles=h2
 
 ### RabbitMQ（必需）
 
-异步任务链路没有同步降级：投递失败就是失败，不会悄悄改成同步执行。所以本地需要 RabbitMQ：
+异步任务链路没有同步降级：投递失败就是失败，不会悄悄改成同步执行。
 
 ```bash
+# 最省事：Docker
 docker run -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 ```
+
+Windows 原生安装的要点（Erlang 与 RabbitMQ 版本必须匹配）：
+
+1. 先按官方 [which-erlang](https://www.rabbitmq.com/docs/which-erlang) 选版本，装 Erlang/OTP 并设置 `ERLANG_HOME`；
+2. 解压 `rabbitmq-server-windows-*.zip` 到 `C:\Program Files\`，把 `sbin` 加进 `Path`；
+3. `rabbitmq-plugins enable rabbitmq_management`；
+4. `rabbitmq-service.bat install` 然后 `rabbitmq-service.bat start`；
+5. 管理台 <http://localhost:15672>（guest/guest，默认只允许本机）。
 
 项目连的是**独立 vhost `/maibao`**、用户 `maibao`（vhost 名字带前导斜杠）。新环境要先建好并授权，否则队列声明会失败：
 
@@ -106,9 +124,9 @@ rabbitmqctl add_user maibao maibao
 rabbitmqctl set_permissions -p /maibao maibao ".*" ".*" ".*"
 ```
 
-管理台等价操作见 [docs/03-本地安装RabbitMQ.md](docs/03-本地安装RabbitMQ.md#L113)。
+管理台等价操作：`Admin → Virtual Hosts → Add`，Name 填 `/maibao`；再建用户并 `Set permission`，三个正则都填 `.*`。
 
-broker 不可用时应用仍能启动（监听容器会在后台重连），但 `/api/task/submit` 会直接返回错误，`/actuator/health` 也会变 DOWN——这是预期信号，不是待修的 bug。
+broker 不可用时应用仍能启动（监听容器会在后台重连），但 `/api/task/submit` 会直接返回错误，`/actuator/health` 也会变 DOWN——这是预期信号。
 
 可靠性相关的几层：
 
@@ -116,9 +134,9 @@ broker 不可用时应用仍能启动（监听容器会在后台重连），但 
 |---|---|
 | 生产端 | `publisher-confirm-type: correlated` + `publisher-returns`，未确认/未路由的消息记 error 并计数 |
 | 投递 | 消息持久化 + 队列持久化 |
-| 消费 | 手动 ack；失败时带 `x-retry-count` 头重新投递，最多 `app.mq.max-retries`（默认 3）次 |
-| 兜底 | 重试耗尽写 `failed_task` 表并 nack，不把毒消息留在队列里 |
-| 幂等 | `processed_task` 的唯一约束；去重记录与业务动作在同一个事务里，失败会一起回滚，重试才有机会重跑 |
+| 消费 | 手动 ack；失败时带 `x-retry-count` 头重新投递 |
+| 兜底 | 重试耗尽写 `failed_task` 表并 nack |
+| 幂等 | `processed_task` 的唯一约束；去重记录与业务动作在同一个事务里，失败一起回滚，重试才有机会重跑 |
 
 ---
 
@@ -181,6 +199,40 @@ mvn test
 - `AesGcmCipherTest` — 加解密往返 + 脱敏
 - `PublishServiceTest` — 只对抢到的记录提交执行、成功/失败收尾、收尾落空、卡死回收
 - `TaskConsumerTest` — 重复消息 ack 跳过、失败重投（重试次数 +1）、重试耗尽落失败表
+- `TokenEstimatorTest` / `CostCalculatorTest` — token 估算与按模型定价
+
+---
+
+## 边界与现状
+
+**已验证**：27 个单测通过；6 张表由 `schema.sql` 建好并通过 `validate`；发布链路抢占→执行→收尾与卡死回收、MQ 重试与失败表、对话/流式/工作流/发布/密钥/用量接口均实测通过。
+
+**已知缺口**（如实标注，不是待修的 bug）：
+
+1. `SseFrameParser` / `ChunkNormalizer` 目前只有单测，没有接进 `/api/chat/stream`——页面上的流式效果来自 `MockAdapter` 逐字符推流。
+2. 没有 `@SpringBootTest` 集成测试，状态机与消费重试靠单测 + 手工端到端验证。
+3. MQ 没有死信队列和延迟重试，用「有限重试 + 失败表」替代。
+
+**范围边界**：定时调度、灰度切流、审批流、服务注册发现、DAG 执行引擎、多租户与限流都不在本项目范围内，完整清单见 [`docs/01-设计取舍.md`](docs/01-设计取舍.md)。
+
+**改代码的约定**：
+
+- Java 17 + Spring Boot 3.2，不降级、不引入 Lombok；
+- 新增厂商 = 新增一个 `AiProviderAdapter` 实现，不改 `AdapterRegistry` / `ChatService`；
+- 状态迁移一律用条件更新，幂等靠唯一约束，不要"先查后写"；
+- REST 入口放 `controller/`，DTO / VO / PO 放模块的 `domain/`，逻辑留在模块根包；
+- 注释只写"为什么"，不写"是什么"。
+
+---
+
+## 文档
+
+| 文件 | 内容 |
+|---|---|
+| [`docs/01-设计取舍.md`](docs/01-设计取舍.md) | 每个技术点为什么这么设计、常见疑问 |
+| [`docs/02-时序图.md`](docs/02-时序图.md) | 发布链路与 MQ 链路的时序图（PNG + PlantUML 源） |
+| [`docs/03-数据库设计.md`](docs/03-数据库设计.md) | 表结构、索引、计费口径 |
+| [`docs/schema.sql`](docs/schema.sql) | 建表脚本（结构唯一来源） |
 
 ---
 
@@ -188,4 +240,4 @@ mvn test
 
 - 这是一个**技术验证型项目**，业务是"调 API Key 做 AI 对话"，重点在机制而不是功能完整度。
 - 发布、灰度、调度在真实系统里通常由独立服务承担，这里只保留**业务对象的状态与并发控制**这一层。
-- 没有 API Key 也能跑：`MockAdapter` 会兜底生成回复。
+- 没有 API Key 也能跑：`MockAdapter` 会兜底生成回复；OpenAI key 可以配在 `app.provider.openai.api-key`。

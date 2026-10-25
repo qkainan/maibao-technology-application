@@ -2,8 +2,8 @@
 -- maibao_technology_application  建表脚本
 -- MySQL 8 / utf8mb4 / InnoDB
 -- 执行：mysql -u root -p maibao_technology_application < docs/schema.sql
--- 说明：与 docs/05-数据库设计.md 第 2 节一致；执行后建议把
---       spring.jpa.hibernate.ddl-auto 改成 validate
+-- 说明：与 docs/03-数据库设计.md 第 2 节一致；数据库结构以本脚本为准，
+--       应用侧 spring.jpa.hibernate.ddl-auto 为 validate
 -- ============================================================
 
 SET NAMES utf8mb4;
