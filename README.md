@@ -156,6 +156,26 @@ broker 不可用时应用仍能启动（监听容器会在后台重连），但 
 | 幂等 | `processed_task` 的唯一约束；去重记录与业务动作在同一个事务里，失败一起回滚 |
 | 对账 | `SENT` 超时无回执 → 重新投递；重试次数用尽 → `FAILED` |
 
+### 消费并发与预取
+
+```yaml
+spring:
+  rabbitmq:
+    listener:
+      simple:
+        acknowledge-mode: manual
+        concurrency: 4
+        max-concurrency: 8
+        prefetch: 2
+```
+
+- `prefetch` 是**每个消费者允许的未确认条数**，不是并发数。单线程 + `prefetch: 10` 只是把 10 条消息堆在客户端，吞吐仍被单条耗时钉死；
+- 任务消费者在调模型，属于 IO 密集，吞吐靠 `concurrency`：4 个线程起步，忙时扩到 8；
+- 每线程 `prefetch: 2`，未确认窗口约 8 条，进程崩溃时最多重投这 8 条（`processed_task` 幂等兜底）；
+- 实测 20 条任务：单线程 `0.40s`（≈50 条/秒），4 并发 `0.13s`（≈155 条/秒）。
+
+> 并发再往上会被 `cost_accounting` 的单行更新卡住：同一 `(user, model, date)` 是热点行，实测 4 并发只拿到约 3 倍提升。要更高吞吐得把按天汇总改成异步批量或分桶。
+
 ---
 
 ## 日志

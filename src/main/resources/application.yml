@@ -45,7 +45,11 @@ spring:
     listener:
       simple:
         acknowledge-mode: manual
-        prefetch: 10
+        # 任务消费者是 IO 密集（调模型），吞吐靠并发而不是预取：
+        # 4 个消费者线程起步，忙时可扩到 8；prefetch 每线程 2 条，未确认窗口约 8 条。
+        concurrency: 4
+        max-concurrency: 8
+        prefetch: 2
 
 management:
   endpoints:
