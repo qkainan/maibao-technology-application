@@ -45,6 +45,24 @@ public class RabbitConfig {
     @Value("${app.mq.dlq-routing-key}")
     private String dlqRoutingKey;
 
+    @Value("${app.cost.exchange}")
+    private String costExchangeName;
+
+    @Value("${app.cost.queue}")
+    private String costQueueName;
+
+    @Value("${app.cost.routing-key}")
+    private String costRoutingKey;
+
+    @Value("${app.cost.dlx-exchange}")
+    private String costDlxExchange;
+
+    @Value("${app.cost.dlq-queue}")
+    private String costDlqQueue;
+
+    @Value("${app.cost.dlq-routing-key}")
+    private String costDlqRoutingKey;
+
     @Bean
     public DirectExchange taskExchange() {
         return new DirectExchange(exchangeName, true, false);
@@ -77,6 +95,41 @@ public class RabbitConfig {
     @Bean
     public Binding deadLetterBinding(Queue deadLetterQueue, DirectExchange deadLetterExchange) {
         return BindingBuilder.bind(deadLetterQueue).to(deadLetterExchange).with(dlqRoutingKey);
+    }
+
+    // ---------- 成本事件：独立 exchange / queue / 死信 ----------
+
+    @Bean
+    public DirectExchange costExchange() {
+        return new DirectExchange(costExchangeName, true, false);
+    }
+
+    @Bean
+    public Queue costQueue() {
+        return QueueBuilder.durable(costQueueName)
+                .deadLetterExchange(costDlxExchange)
+                .deadLetterRoutingKey(costDlqRoutingKey)
+                .build();
+    }
+
+    @Bean
+    public Binding costBinding(Queue costQueue, DirectExchange costExchange) {
+        return BindingBuilder.bind(costQueue).to(costExchange).with(costRoutingKey);
+    }
+
+    @Bean
+    public DirectExchange costDeadLetterExchange() {
+        return new DirectExchange(costDlxExchange, true, false);
+    }
+
+    @Bean
+    public Queue costDeadLetterQueue() {
+        return QueueBuilder.durable(costDlqQueue).build();
+    }
+
+    @Bean
+    public Binding costDeadLetterBinding(Queue costDeadLetterQueue, DirectExchange costDeadLetterExchange) {
+        return BindingBuilder.bind(costDeadLetterQueue).to(costDeadLetterExchange).with(costDlqRoutingKey);
     }
 
     @Bean

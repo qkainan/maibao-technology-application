@@ -2,12 +2,15 @@ package com.maibao.tech.mq;
 
 import com.maibao.tech.mq.repository.OutboxRepository;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageDeliveryMode;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,7 +18,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import com.maibao.tech.mq.domain.OutboxMessage;
-import com.maibao.tech.mq.domain.TaskMessage;
 
 /**
  * outbox 投递器：业务只负责落库，真正发消息在这里。
@@ -32,20 +34,17 @@ public class OutboxPublisher {
     private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);
 
     private final OutboxRepository repository;
-    private final OutboxService outboxService;
     private final RabbitTemplate rabbitTemplate;
     private final int maxAttempts;
     private final long consumeTimeoutSeconds;
     private final long leaseSeconds;
 
     public OutboxPublisher(OutboxRepository repository,
-                           OutboxService outboxService,
                            RabbitTemplate rabbitTemplate,
                            @Value("${app.mq.outbox-max-attempts:5}") int maxAttempts,
                            @Value("${app.mq.consume-timeout-seconds:300}") long consumeTimeoutSeconds,
                            @Value("${app.mq.outbox-lease-seconds:30}") long leaseSeconds) {
         this.repository = repository;
-        this.outboxService = outboxService;
         this.rabbitTemplate = rabbitTemplate;
         this.maxAttempts = maxAttempts;
         this.consumeTimeoutSeconds = consumeTimeoutSeconds;
@@ -66,13 +65,17 @@ public class OutboxPublisher {
                 continue;
             }
             try {
-                TaskMessage message = outboxService.toMessage(row);
+                // 消息体已经在 outbox 里存成 JSON，直接按字节投递；
+                // 消费端按方法参数类型反序列化（converter 的 INFERRED 策略），
+                // 这样一套 outbox 可以承载成本、任务等不同类型，不用加 type 列。
+                MessageProperties properties = new MessageProperties();
+                properties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
+                properties.setContentEncoding("UTF-8");
+                properties.setMessageId(row.getMessageId());
+                properties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
+                Message message = new Message(row.getPayload().getBytes(StandardCharsets.UTF_8), properties);
                 CorrelationData correlation = new CorrelationData(String.valueOf(row.getId()));
-                rabbitTemplate.convertAndSend(row.getExchangeName(), row.getRoutingKey(), message, m -> {
-                    m.getMessageProperties().setMessageId(message.taskId());
-                    m.getMessageProperties().setDeliveryMode(MessageDeliveryMode.PERSISTENT);
-                    return m;
-                }, correlation);
+                rabbitTemplate.send(row.getExchangeName(), row.getRoutingKey(), message, correlation);
             } catch (Exception e) {
                 scheduleRetry(row, e);
             }

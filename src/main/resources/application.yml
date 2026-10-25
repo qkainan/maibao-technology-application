@@ -60,6 +60,8 @@ management:
 app:
   # 异步任务消费者使用的默认模型与用户标识（消息里没带时使用）
   task:
+    # 任务链路当前停用：等长任务模型接入后，按适配器能力再开
+    enabled: false
     model: mock:echo
     user-id: async-task
 
@@ -105,6 +107,19 @@ app:
       overall-timeout-ms: 300000
   cost:
     currency: CNY
+    # 成本事件：明细与 outbox 同事务，聚合由消费者完成
+    async-enabled: true
+    zone: Asia/Shanghai
+    exchange: maibao.cost.exchange
+    queue: maibao.cost.queue
+    routing-key: maibao.cost
+    dlx-exchange: maibao.cost.dlx
+    dlq-queue: maibao.cost.dlq
+    dlq-routing-key: maibao.cost.dlq
+    max-retries: 3
+    reconcile-cron: "0 30 2 * * *"
+    cleanup-cron: "0 0 3 * * *"
+    dedupe-retain-days: 7
     # 每 1000 token 的价格；key 取 model 的前缀（mock / openai），default 兜底
     pricing:
       default:

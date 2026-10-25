@@ -18,6 +18,13 @@ public interface OutboxRepository extends JpaRepository<OutboxMessage, Long> {
 
     List<OutboxMessage> findTop20ByStatusAndNextRetryAtLessThanEqualOrderByIdAsc(String status, Instant now);
 
+    long countByStatus(String status);
+
+    /** 投递持续失败的健康度指标：PENDING 且 attempts 已经不少 */
+    @Query("select count(o) from OutboxMessage o where o.status = :pending and o.attempts >= :attempts")
+    long countByStatusAndAttemptsAtLeast(@Param("pending") String pending,
+                                         @Param("attempts") int attempts);
+
     /**
      * 用 next_retry_at 当租约做 CAS 抢占：只有一个实例能把「PENDING 且已到期」的行推到未来。
      * 返回 1 才由本实例发送；返回 0 说明别的实例先抢到了，直接跳过。

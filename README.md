@@ -17,7 +17,7 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 | 适配器模式统一多厂商出入参 | `adapter/` — `AiProviderAdapter` + `AdapterRegistry`，带 `capabilities()` 与错误码归一 |
 | 循环节点（循环变量 / 终止条件 / 轮次上限） | `workflow/LoopNode.java` |
 | SSE 流式链路（真流式 + 帧解析 + 心跳 + seq + 取消） | `chat/stream/` — `OpenAiSseDecoder`、`SseStreamSession` |
-| RabbitMQ（outbox + confirm/returns + 重试 + 死信 + 对账） | `mq/` — `OutboxPublisher`、`TaskConsumer`、`TaskProcessor` |
+| RabbitMQ（outbox + 成本事件 + 重试 + 死信 + 对账） | `mq/` — `OutboxPublisher`、`usage/CostConsumer`、`CostProcessor` |
 | 多线程与锁（状态抢占、乐观锁、卡死回收） | `publish/` — `PublishRepository.claim`、`PublishExecutor` |
 | 密钥加密（密文入库 + 归属校验） | `security/` — `AesGcmCipher`、`KeyVaultService` |
 | 构建与发布（分层缓存 + 多阶段） | `Dockerfile`、`deploy/nginx.conf`、`.github/workflows/ci.yml` |
@@ -50,7 +50,6 @@ mvn spring-boot:run
 | GET | `/api/chat/stream?prompt=...` | **SSE 流式**（浏览器直接打开看） |
 | POST | `/api/workflow/run` | 跑一个「LLM 节点 + 循环 3 轮」的工作流 |
 | POST | `/api/workflow/validate` | 图校验：传邻接表，返回环上的边 |
-| POST | `/api/task/submit?payload=...&model=mock:echo&userId=u1` | 提交异步任务（写 outbox，消费者调模型并记成本） |
 | POST | `/api/publish?nodeId=n1&delaySeconds=10` | 建定时发布记录；到点后自动抢占并执行 |
 | POST | `/api/publish/{id}/finish?success=true` | 手动收尾；返回 `false` 表示记录已不在 `PUBLISHING` |
 | POST | `/api/publish/{id}/race?threads=20` | **并发验证**：20 线程抢一条，应返回 1 |
@@ -81,19 +80,23 @@ mvn spring-boot:run
 | 业务错误（如密钥归属不匹配） | 200 | `{"code":4030,...}`，业务码优先 |
 | 未预期异常 | 200 | `{"code":500,"message":"internal error"}` |
 
-### 异步任务与失败处理
+### 成本事件与 MQ
 
-任务提交只写本地消息表（`mq_outbox`），由定时任务投递，消息不会因为"业务提交后 send 失败"而永久丢失：
+MQ 现在只承载**成本事件**：一次成功对话产生一条消息，聚合由消费者异步完成。对话接口只写明细，不等聚合。
 
-1. `POST /api/task/submit` → 写 `mq_outbox`（`PENDING`），返回 taskId；
+1. `UsageService.record` 在**同一个事务**里写 `user_query_log`（权威）和 `mq_outbox`（`PENDING`）；
 2. 投递器每 2s 扫 `PENDING`，先用 `next_retry_at` 当租约做 CAS 抢占（`UPDATE ... WHERE id=? AND status='PENDING' AND next_retry_at<=now`），**影响行数为 1 才发送**——多实例同时扫也不会重复投递；
 3. 发送后等 confirm `ack` 才标 `SENT`；
-4. 消费者真的调一次模型（`model` 默认 `mock:echo`，可在提交时指定）并写用量/成本，`source=ASYNC`；
+4. `CostConsumer` 消费：`cost_message_log` 唯一键去重 → `CostAccumulator` 累加 `cost_accounting`；
 5. 消费成功后回执 `CONSUMED`；
-6. 失败带 `x-retry-count` 重投（最多 3 次）；鉴权失败、内容过滤、参数错误不重试，直接写 `failed_task` 并 nack → 进死信队列 `maibao.task.dlq`；
-7. 对账任务每分钟跑：`SENT` 超过 5 分钟没有回执的重新投递，重试次数用尽的标 `FAILED`。
+6. 失败带 `x-retry-count` 重投（最多 3 次）；重试耗尽写 `failed_task`、把 outbox 标 `FAILED` 并 nack → `maibao.cost.dlq`；
+7. 对账任务每分钟跑 outbox：`SENT` 超时无回执 → 重投；每天 02:30 对账 T-1 的明细与聚合。
 
-指标：`mq.publish.confirm`、`mq.publish.returned`、`mq.consume.success`、`mq.consume.duplicate`、`mq.consume.retry`、`mq.consume.failed`（`GET /actuator/metrics/{name}`）。
+开关：`app.cost.async-enabled=false` 退回同步累加（回滚路径，已验证账也对得上）。
+
+> **任务链路当前停用**：`/api/task/submit` 已删除，`TaskConsumer/TaskProcessor` 由 `app.task.enabled=false` 关闭，表和队列资产保留——等长任务模型接入后，按适配器能力再启用。原因是"提交后拿不到结果"的异步任务没有真实业务价值。
+
+指标：`mq.publish.confirm`、`mq.publish.returned`、`mq.cost.consume.success`、`mq.cost.consume.duplicate`、`mq.cost.consume.retry`、`mq.cost.consume.failed`、`cost.reconcile.mismatch`（`GET /actuator/metrics/{name}`）。
 
 ### 数据库（MySQL 8）
 
@@ -105,7 +108,7 @@ spring:
     password: 你的密码
 ```
 
-表结构以 [`docs/schema.sql`](docs/schema.sql) 为准（应用侧 `ddl-auto: validate`，只校验不改结构），共 7 张表：`publish_record`、`processed_task`、`failed_task`、`mq_outbox`、`api_key`、`user_query_log`、`cost_accounting`。字段、索引与设计说明见 [`docs/03-数据库设计.md`](docs/03-数据库设计.md)。
+表结构以 [`docs/schema.sql`](docs/schema.sql) 为准（应用侧 `ddl-auto: validate`，只校验不改结构），共 8 张表：`publish_record`、`processed_task`、`failed_task`、`mq_outbox`、`cost_message_log`、`api_key`、`user_query_log`、`cost_accounting`。字段、索引与设计说明见 [`docs/03-数据库设计.md`](docs/03-数据库设计.md)。
 
 不装 MySQL 时可以用 H2 profile：
 
@@ -143,7 +146,7 @@ rabbitmqctl set_permissions -p /maibao maibao ".*" ".*" ".*"
 
 管理台等价操作：`Admin → Virtual Hosts → Add`，Name 填 `/maibao`；再建用户并 `Set permission`，三个正则都填 `.*`。
 
-broker 不可用时应用仍能启动（监听容器会在后台重连），但 `/api/task/submit` 会直接返回错误，`/actuator/health` 也会变 DOWN——这是预期信号。
+broker 不可用时应用仍能启动（监听容器会在后台重连），对话接口照常返回——明细和 outbox 先落库，成本消息等 broker 恢复后自动补投；`/actuator/health` 会变 DOWN——这是预期信号。
 
 可靠性相关的几层：
 
@@ -255,13 +258,14 @@ mvn test
 
 ## 边界与现状
 
-**已验证**：36 个单测通过；7 张表由 `schema.sql` 建好并通过 `validate`；发布链路抢占→执行→收尾与卡死回收、SSE 真流式（32 帧带 seq / 15s 心跳 / 断连落 CANCELLED）、outbox 投递（PENDING→SENT→CONSUMED）、MQ 重试与死信、对话/工作流/发布/密钥/用量接口均实测通过。
+**已验证**：45 个单测通过；8 张表由 `schema.sql` 建好并通过 `validate`；发布链路抢占→执行→收尾与卡死回收、SSE 真流式（32 帧带 seq / 15s 心跳 / 断连落 CANCELLED）、成本事件 outbox→消费→聚合（重复投递只累加一次）、`async-enabled=false` 回滚路径、发布/密钥/用量接口均实测通过。
 
 **已知缺口**（如实标注，不是待修的 bug）：
 
 1. 没有 `@SpringBootTest` 集成测试，状态机与消费重试靠单测 + 手工端到端验证。
-2. 成本明细与聚合表没有对账任务（明细是权威，聚合可重算，但没有定时比对）。
-3. 重试是"带计数重新投递"，没有延迟重试（死信队列已补，延迟要靠额外插件或延迟队列）。
+2. 成本消息"每次对话一条"的量级没有压测；真打模型且 QPS 上来后，再考虑按 `(user, model, 分钟)` 聚合。
+3. 任务链路停用中：`task_result` 表、适配器 `capabilities()` 的异步能力、长任务"发起 + 回调"语义都还没做。
+4. 重试是"带计数重新投递"，没有延迟重试（死信队列已补，延迟要靠额外插件或延迟队列）。
 
 **范围边界**：定时调度、灰度切流、审批流、服务注册发现、DAG 执行引擎、多租户与限流都不在本项目范围内，完整清单见 [`docs/01-设计取舍.md`](docs/01-设计取舍.md)。
 

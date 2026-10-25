@@ -17,8 +17,8 @@ import com.maibao.tech.mq.domain.TaskMessage;
 /**
  * 业务侧写 outbox：只落库，不碰 broker。
  *
- * <p>同一个 taskId 重复提交会撞唯一键 —— 这正是业务幂等：第二次不产生新消息，
- * 返回已有的那一条。</p>
+ * <p>消息体统一存 JSON，投递时按调用方给的 exchange / routingKey 发送；
+ * 幂等键由调用方决定（成本用 request_id，任务用 taskId）。</p>
  */
 @Service
 public class OutboxService {
@@ -27,38 +27,40 @@ public class OutboxService {
 
     private final OutboxRepository repository;
     private final ObjectMapper objectMapper;
-    private final String exchange;
-    private final String routingKey;
+    private final String taskExchange;
+    private final String taskRoutingKey;
 
     public OutboxService(OutboxRepository repository,
                          ObjectMapper objectMapper,
-                         @Value("${app.mq.exchange}") String exchange,
-                         @Value("${app.mq.routing-key}") String routingKey) {
+                         @Value("${app.mq.exchange}") String taskExchange,
+                         @Value("${app.mq.routing-key}") String taskRoutingKey) {
         this.repository = repository;
         this.objectMapper = objectMapper;
-        this.exchange = exchange;
-        this.routingKey = routingKey;
+        this.taskExchange = taskExchange;
+        this.taskRoutingKey = taskRoutingKey;
     }
 
-    public OutboxMessage enqueue(TaskMessage message) {
+    /** 通用入队：幂等键重复时返回已有记录，不再产生第二条消息 */
+    public OutboxMessage enqueue(String messageId, String exchange, String routingKey, Object payload) {
         try {
-            return repository.save(new OutboxMessage(message.taskId(), exchange, routingKey, toJson(message)));
+            return repository.save(new OutboxMessage(messageId, exchange, routingKey, toJson(payload)));
         } catch (DataIntegrityViolationException duplicated) {
-            log.info("duplicate submit for task {}, reuse existing outbox row", message.taskId());
-            return repository.findByMessageId(message.taskId())
+            log.info("duplicate outbox message {}, reuse existing row", messageId);
+            return repository.findByMessageId(messageId)
                     .orElseThrow(() -> duplicated);
         }
     }
 
-    public TaskMessage toMessage(OutboxMessage row) throws JsonProcessingException {
-        return objectMapper.readValue(row.getPayload(), TaskMessage.class);
+    /** 任务消息的便捷入口（任务链路当前停用，保留给后续异步任务） */
+    public OutboxMessage enqueue(TaskMessage message) {
+        return enqueue(message.taskId(), taskExchange, taskRoutingKey, message);
     }
 
-    private String toJson(TaskMessage message) {
+    private String toJson(Object payload) {
         try {
-            return objectMapper.writeValueAsString(message);
+            return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("cannot serialize task message", e);
+            throw new IllegalStateException("cannot serialize outbox payload", e);
         }
     }
 }

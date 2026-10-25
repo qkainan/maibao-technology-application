@@ -17,6 +17,9 @@ import org.springframework.stereotype.Service;
  * 挡住，直到锁等待超时。让 UPDATE 独立提交，锁就释放了。</p>
  *
  * <p>并发插入由唯一键兜底：撞键说明别人先建了行，回到累加即可。</p>
+ *
+ * <p>{@code statDate} 由调用方传入：生产端按 Asia/Shanghai 算好并随消息投递，
+ * 避免消费端在跨天重投时把账记到错误日期。</p>
  */
 @Service
 public class CostAccumulator {
@@ -33,16 +36,16 @@ public class CostAccumulator {
         this.calculator = calculator;
     }
 
-    public void accumulate(String userId, String model, int promptTokens, int completionTokens, BigDecimal cost) {
-        LocalDate today = LocalDate.now();
+    public void accumulate(String userId, String model, LocalDate statDate,
+                           int promptTokens, int completionTokens, BigDecimal cost) {
         long total = (long) promptTokens + completionTokens;
-        if (repository.accumulate(userId, model, today, promptTokens, completionTokens, total, cost, Instant.now()) > 0) {
+        if (repository.accumulate(userId, model, statDate, promptTokens, completionTokens, total, cost, Instant.now()) > 0) {
             return;
         }
         try {
-            rowCreator.create(userId, model, today, promptTokens, completionTokens, cost, calculator.currency());
+            rowCreator.create(userId, model, statDate, promptTokens, completionTokens, cost, calculator.currency());
         } catch (DataIntegrityViolationException raced) {
-            repository.accumulate(userId, model, today, promptTokens, completionTokens, total, cost, Instant.now());
+            repository.accumulate(userId, model, statDate, promptTokens, completionTokens, total, cost, Instant.now());
         }
     }
 }

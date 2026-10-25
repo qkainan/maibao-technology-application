@@ -160,7 +160,6 @@
     <button role="tab" data-tab="chat" class="active">同步对话</button>
     <button role="tab" data-tab="sse">SSE 流式</button>
     <button role="tab" data-tab="workflow">工作流</button>
-    <button role="tab" data-tab="task">异步任务</button>
     <button role="tab" data-tab="publish">发布 / 并发</button>
     <button role="tab" data-tab="keys">密钥</button>
     <button role="tab" data-tab="usage">用量与成本</button>
@@ -249,33 +248,6 @@
       <pre class="out" id="wf-validate-out"></pre>
       <p class="hint" style="margin-top:10px">
         已知行为：实现返回的是 DFS <b>回边</b>（删掉这些边即可破环），不是"环上的所有边"。三节点环只会返回 <code>c-&gt;a</code>。
-      </p>
-    </div>
-  </section>
-
-  <!-- ============ 异步任务 ============ -->
-  <section class="panel" data-panel="task">
-    <div class="card">
-      <h2>提交异步任务</h2>
-      <p class="hint"><span class="verb post">POST</span><code>/api/task/submit</code> — 先写 outbox 再投递；消费者会真的调一次模型并记成本（source=ASYNC）。</p>
-      <div class="row">
-        <label class="grow">payload<textarea id="task-payload" rows="2">hello from console</textarea></label>
-      </div>
-      <div class="row">
-        <label class="grow">taskId（可空，用于测幂等）<input id="task-id" placeholder="留空则自动生成 UUID"></label>
-      </div>
-      <div class="row">
-        <label class="grow">model（可空，默认 mock:echo）<input id="task-model" placeholder="mock:echo"></label>
-        <label class="grow">userId（可空，默认 async-task）<input id="task-user" placeholder="async-task"></label>
-      </div>
-      <div class="actions">
-        <button class="btn primary" id="task-run">提交</button>
-        <button class="btn ghost" id="task-twice">同 id 连提两次（测幂等）</button>
-      </div>
-      <pre class="out" id="task-out"></pre>
-      <p class="hint" style="margin-top:10px">
-        幂等验证要看服务端日志：第二次应打印 <code>duplicate message, ack and skip</code>。
-        异步链路可在 RabbitMQ 管理台查看队列 <code>maibao.task.queue</code>。
       </p>
     </div>
   </section>
@@ -638,43 +610,6 @@
 
   document.querySelectorAll('[data-adj]').forEach(function (btn) {
     btn.addEventListener('click', function () { $('wf-adj').value = btn.getAttribute('data-adj'); });
-  });
-
-  /* ---------- 异步任务 ---------- */
-  async function submitTask(outId, id) {
-    return request('POST', '/api/task/submit', {
-      query: {
-        payload: $('task-payload').value,
-        taskId: id,
-        model: $('task-model').value.trim(),
-        userId: $('task-user').value.trim()
-      }
-    });
-  }
-
-  $('task-run').addEventListener('click', function () {
-    run('task-out', async function () {
-      const res = await submitTask('task-out', $('task-id').value.trim());
-      paint('task-out', res, '返回 taskId；消费结果看「用量与成本」或服务端日志');
-    });
-  });
-
-  $('task-twice').addEventListener('click', function () {
-    run('task-out', async function () {
-      const id = $('task-id').value.trim() || 'dup-' + Date.now();
-      $('task-id').value = id;
-      const first = await submitTask('task-out', id);
-      const second = await submitTask('task-out', id);
-      const out = $('task-out');
-      out.classList.remove('ok', 'err');
-      out.classList.add('ok');
-      out.textContent =
-        '同一 taskId 提交两次，用于验证消费幂等\n' +
-        'taskId = ' + id + '\n\n' +
-        '第一次：HTTP ' + first.status + ' · ' + first.elapsed + ' ms\n' + JSON.stringify(first.body, null, 2) + '\n\n' +
-        '第二次：HTTP ' + second.status + ' · ' + second.elapsed + ' ms\n' + JSON.stringify(second.body, null, 2) + '\n\n' +
-        '服务端日志应出现 duplicate message, ack and skip（第二次）';
-    });
   });
 
   /* ---------- 发布 / 并发 ---------- */

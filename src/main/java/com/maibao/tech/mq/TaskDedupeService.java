@@ -4,6 +4,7 @@ import com.maibao.tech.mq.repository.ProcessedTaskRepository;
 
 import jakarta.persistence.EntityManager;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +17,7 @@ import com.maibao.tech.mq.domain.ProcessedTask;
  * <p>业务动作要调外部模型，不能在同一个数据库事务里等——那会把连接一直占着。
  * 所以拆成两个短事务：先提交锚点（挡住重复投递），业务失败再撤销锚点。</p>
  */
+@ConditionalOnProperty(name = "app.task.enabled", havingValue = "true")
 @Service
 public class TaskDedupeService {
 

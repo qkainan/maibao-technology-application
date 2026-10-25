@@ -1,0 +1,50 @@
+@startuml cost-sequence
+title 成本事件链路：明细 + outbox → MQ → 幂等累加 → 对账
+skinparam defaultFontName "Microsoft YaHei"
+skinparam shadowing false
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+autonumber
+
+actor 客户端
+participant "ChatController" as CC
+participant "ChatService" as CS
+participant "UsageService" as US
+database "user_query_log" as LOG
+database "mq_outbox" as OB
+participant "OutboxPublisher\n(2s 扫描 + 租约)" as OP
+queue "maibao.cost.queue\n(DLX → DLQ)" as MQ
+participant "CostConsumer" as CON
+participant "CostProcessor" as CP
+database "cost_message_log" as DEDUP
+database "cost_accounting" as ACC
+
+客户端 -> CC : POST /api/chat
+CC -> CS : chat(userId, model, prompt)
+CS -> CS : adapter.chat()
+CS -> US : record(..., SUCCESS)
+US -> LOG : INSERT 明细\n（权威）
+US -> OB : INSERT outbox\n（同事务，exchange=maibao.cost.exchange）
+CS --> 客户端 : reply（不等成本）
+
+OP -> OB : SELECT PENDING + CAS 抢租约
+OP -> MQ : send(JSON bytes, persistent)
+MQ -> CON : deliver（手动 ack）
+
+CON -> CP : process(CostMessage)
+CP -> DEDUP : INSERT 去重\n（REQUIRES_NEW，唯一键）
+alt 新消息
+  CP -> ACC : UPDATE 累加\n（事务外，避免间隙锁）
+  CP --> CON : ok
+  CON -> MQ : basicAck
+  CON -> OB : markConsumed
+else 重复投递
+  DEDUP --> CP : 唯一键冲突
+  CP --> CON : 抛出
+  CON -> MQ : basicAck（跳过）
+  CON -> OB : markConsumed
+end
+
+note over CP : 失败 → 撤销去重锚点 → 重投\n重试耗尽 → failed_task + outbox FAILED + DLQ
+note over ACC : 每天 02:30：明细 SUM vs 聚合 SUM\n差异超阈值告警（只发现不自动修）
+@enduml

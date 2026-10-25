@@ -14,6 +14,7 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import com.maibao.tech.adapter.domain.ProviderError;
@@ -34,6 +35,7 @@ import com.maibao.tech.mq.domain.TaskMessage;
  * 这样重试次数跟着消息走，多实例部署时换个实例也能读到。次数用尽后写
  * {@code failed_task} 再丢弃，避免毒消息把队列堵死。</p>
  */
+@ConditionalOnProperty(name = "app.task.enabled", havingValue = "true")
 @Component
 public class TaskConsumer {
 

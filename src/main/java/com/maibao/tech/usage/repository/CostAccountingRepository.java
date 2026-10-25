@@ -37,4 +37,8 @@ public interface CostAccountingRepository extends JpaRepository<CostAccounting, 
                    @Param("tt") long totalTokens,
                    @Param("cost") BigDecimal cost,
                    @Param("now") Instant now);
+
+    /** 某账期的聚合成本合计，用于和明细对账 */
+    @Query("select coalesce(sum(c.costAmount), 0) from CostAccounting c where c.statDate = :date")
+    BigDecimal sumByStatDate(@Param("date") LocalDate date);
 }

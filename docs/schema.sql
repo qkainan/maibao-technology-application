@@ -119,3 +119,12 @@ CREATE TABLE IF NOT EXISTS `api_key` (
   PRIMARY KEY (`id`),
   KEY `idx_apikey_owner` (`owner_id`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='API 密钥（密文入库）';
+-- ---------- 2.8 成本消息去重 ----------
+CREATE TABLE IF NOT EXISTS `cost_message_log` (
+  `id`         bigint      NOT NULL AUTO_INCREMENT,
+  `message_id` varchar(64) NOT NULL                COMMENT '= user_query_log.request_id，成本消息幂等键',
+  `created_at` datetime(6) NOT NULL                COMMENT '落库时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_cost_message` (`message_id`),
+  KEY `idx_cost_message_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='成本消息去重';

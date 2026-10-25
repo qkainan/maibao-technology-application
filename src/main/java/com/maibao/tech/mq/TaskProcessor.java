@@ -3,6 +3,7 @@ package com.maibao.tech.mq;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import com.maibao.tech.chat.ChatService;
@@ -17,6 +18,7 @@ import com.maibao.tech.mq.domain.TaskMessage;
  * <p>成本由 {@link ChatService} 统一记账（source=ASYNC），所以异步任务也会出现在
  * 用量与成本统计里。</p>
  */
+@ConditionalOnProperty(name = "app.task.enabled", havingValue = "true")
 @Service
 public class TaskProcessor {
 
