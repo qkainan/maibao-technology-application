@@ -212,6 +212,17 @@ public class CostProperties {
         /** 消费失败后的重投次数上限 */
         private int maxRetries = 3;
 
+        /** 退避延迟队列用的交换机 */
+        private String retryExchange = "maibao.detail.retry.exchange";
+
+        /**
+         * 退避档位（毫秒），第 N 次失败等第 N 档。
+         *
+         * <p>实现方式是"TTL 队列 + 死信回主队列"：消息投进 {@code retry.5000} 这种队列后没有消费者，
+         * 等 TTL 到期被死信回 {@code maibao.detail.exchange}，等同于"延迟 N 秒后重投"。</p>
+         */
+        private long[] retryDelaysMs = {5_000L, 30_000L, 120_000L};
+
         public boolean isViaMq() {
             return "mq".equalsIgnoreCase(mode);
         }
@@ -310,6 +321,41 @@ public class CostProperties {
 
         public void setMaxRetries(int maxRetries) {
             this.maxRetries = maxRetries;
+        }
+
+        public String getRetryExchange() {
+            return retryExchange;
+        }
+
+        public void setRetryExchange(String retryExchange) {
+            this.retryExchange = retryExchange;
+        }
+
+        public long[] getRetryDelaysMs() {
+            return retryDelaysMs;
+        }
+
+        public void setRetryDelaysMs(long[] retryDelaysMs) {
+            this.retryDelaysMs = retryDelaysMs;
+        }
+
+        /** 第 attempt 次失败该等多久（attempt 从 1 开始，超出档位就取最后一档）。 */
+        public long delayForAttempt(int attempt) {
+            if (retryDelaysMs == null || retryDelaysMs.length == 0) {
+                return 0L;
+            }
+            int idx = Math.min(Math.max(attempt - 1, 0), retryDelaysMs.length - 1);
+            return retryDelaysMs[idx];
+        }
+
+        /** 延迟队列名：{queue}.retry.{delayMs} */
+        public String retryQueue(long delayMs) {
+            return queue + ".retry." + delayMs;
+        }
+
+        /** 延迟队列的路由键：{routingKey}.retry.{delayMs} */
+        public String retryRoutingKey(long delayMs) {
+            return routingKey + ".retry." + delayMs;
         }
     }
 }

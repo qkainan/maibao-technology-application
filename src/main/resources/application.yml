@@ -16,6 +16,13 @@ server:
       rotate: true
 
 spring:
+  # 默认只有 1 个调度线程：flush / 落盘 / 对账 / 发布扫描共用
+  # 一个任务卡住会连带拖停其它任务，所以留出余量
+  task:
+    scheduling:
+      pool:
+        size: 2
+
   application:
     name: maibao-technology-application
   # 本地密码等敏感配置放 application-local.yml（已在 .gitignore），缺失时不影响启动
@@ -144,6 +151,9 @@ app:
       dlq-queue: maibao.detail.dlq
       dlq-routing-key: maibao.detail.dlq
       max-retries: 3
+      retry-exchange: maibao.detail.retry.exchange
+      # 退避档位：第 1 次失败等 5s，第 2 次 30s，第 3 次 2min（队列级 TTL + 死信回主队列）
+      retry-delays-ms: 5000,30000,120000
 
 logging:
   level:

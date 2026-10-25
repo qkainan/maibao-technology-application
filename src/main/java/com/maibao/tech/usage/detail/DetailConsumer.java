@@ -69,7 +69,8 @@ public class DetailConsumer {
 
     private void handleFailure(DetailBatch batch, Channel channel, long tag,
                                int attempt, Exception e) throws IOException {
-        if (attempt < properties.getDetail().getMaxRetries() && republish(batch, attempt + 1)) {
+        if (attempt < properties.getDetail().getMaxRetries()
+                && republishWithDelay(batch, attempt + 1)) {
             channel.basicAck(tag, false);
             meterRegistry.counter("mq.detail.consume.retry").increment();
             log.warn("detail consume failed (attempt {}/{}), republished: batchId={} - {}",
@@ -86,24 +87,35 @@ public class DetailConsumer {
     }
 
     /**
-     * 重投一条新消息（带计数头），原消息由调用方 ack 掉。
+     * 投到退避队列（不是主队列）：消息在延迟队列里等到 TTL 过期，再由死信路由回主队列。
+     *
+     * <p>为什么要退避：消费失败多半是 DB 抖动或下游限流，立即重投三次会在毫秒内烧完，
+     * 等于没重试。按 5s / 30s / 2min 递进，给下游恢复的时间。</p>
      *
      * <p>发送失败不能把异常抛出去：listener 抛异常时容器会 requeue，而 {@code x-retry-count}
      * 不会变，结果就是同一条消息无限重投。</p>
      */
-    private boolean republish(DetailBatch batch, int attempt) {
+    private boolean republishWithDelay(DetailBatch batch, int attempt) {
+        CostProperties.Detail detail = properties.getDetail();
+        long delayMs = detail.delayForAttempt(attempt);
+        if (delayMs <= 0) {
+            return false;
+        }
         try {
-            rabbitTemplate.convertAndSend(properties.getDetail().getExchange(),
-                    properties.getDetail().getRoutingKey(), batch, message -> {
+            rabbitTemplate.convertAndSend(detail.getRetryExchange(),
+                    detail.retryRoutingKey(delayMs), batch, message -> {
                         MessageProperties props = message.getMessageProperties();
                         props.setMessageId(batch.batchId());
                         props.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
                         props.setHeader(RETRY_HEADER, attempt);
                         return message;
                     });
+            log.debug("detail retry scheduled: batchId={} attempt={} delay={}ms",
+                    batch.batchId(), attempt, delayMs);
             return true;
         } catch (RuntimeException e) {
-            log.error("detail republish failed, giving up: batchId={} - {}", batch.batchId(), e.toString());
+            log.error("detail retry publish failed, giving up: batchId={} - {}",
+                    batch.batchId(), e.toString());
             return false;
         }
     }

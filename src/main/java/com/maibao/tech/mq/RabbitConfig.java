@@ -7,8 +7,13 @@ import java.time.Instant;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Declarable;
+import org.springframework.amqp.core.Declarables;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
@@ -125,6 +130,34 @@ public class RabbitConfig {
                                            @Qualifier("detailDeadLetterExchange") DirectExchange exchange,
                                            CostProperties properties) {
         return BindingBuilder.bind(queue).to(exchange).with(properties.getDetail().getDlqRoutingKey());
+    }
+
+
+    /**
+     * 明细重试的退避拓扑：每个档位一个队列，只设 TTL、没有消费者。
+     *
+     * <p>消息进队列后等 TTL 到期，被死信回主交换机 —— 等价于"延迟 N 秒后重投"。
+     * 用队列级 {@code x-message-ttl} 而不是消息级 {@code expiration}，是为了避开
+     * "队头消息 TTL 未到，后面早过期的也出不去"的队头阻塞。</p>
+     */
+    @Bean
+    public Declarables detailRetryTopology(CostProperties properties) {
+        CostProperties.Detail detail = properties.getDetail();
+        DirectExchange retryExchange = new DirectExchange(detail.getRetryExchange(), true, false);
+        List<Declarable> declarables = new ArrayList<>();
+        declarables.add(retryExchange);
+        for (long delayMs : detail.getRetryDelaysMs()) {
+            String queueName = detail.retryQueue(delayMs);
+            Queue queue = QueueBuilder.durable(queueName)
+                    .ttl((int) Math.min(delayMs, Integer.MAX_VALUE))
+                    .deadLetterExchange(detail.getExchange())
+                    .deadLetterRoutingKey(detail.getRoutingKey())
+                    .build();
+            declarables.add(queue);
+            declarables.add(BindingBuilder.bind(queue).to(retryExchange)
+                    .with(detail.retryRoutingKey(delayMs)));
+        }
+        return new Declarables(declarables);
     }
 
     @Bean
