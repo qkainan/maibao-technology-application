@@ -1,4 +1,6 @@
-package com.maibao.tech.usage;
+package com.maibao.tech.usage.util;
+
+import com.maibao.tech.usage.CostProperties;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
