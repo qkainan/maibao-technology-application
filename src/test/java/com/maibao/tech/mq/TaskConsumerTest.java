@@ -1,7 +1,7 @@
 package com.maibao.tech.mq;
 
 import com.maibao.tech.mq.repository.FailedTaskRepository;
-import com.maibao.tech.mq.repository.OutboxRepository;
+import com.maibao.tech.mq.outbox.repository.OutboxRepository;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -27,7 +27,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.maibao.tech.adapter.domain.ProviderError;
 import com.maibao.tech.adapter.domain.ProviderException;
 import com.maibao.tech.mq.domain.FailedTask;
-import com.maibao.tech.mq.domain.OutboxMessage;
+import com.maibao.tech.mq.outbox.domain.OutboxMessage;
 import com.maibao.tech.mq.domain.TaskMessage;
 
 @ExtendWith(MockitoExtension.class)

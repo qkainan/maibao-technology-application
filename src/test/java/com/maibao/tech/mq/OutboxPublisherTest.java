@@ -17,19 +17,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import com.maibao.tech.mq.outbox.OutboxPublisher;
-
-import com.maibao.tech.mq.outbox.repository.OutboxRepository;
-
-import com.maibao.tech.mq.outbox.domain.OutboxMessage;
-
 import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
-import com.maibao.tech.mq.domain.OutboxMessage;
-import com.maibao.tech.mq.repository.OutboxRepository;
+import com.maibao.tech.mq.outbox.OutboxPublisher;
+import com.maibao.tech.mq.outbox.domain.OutboxMessage;
+import com.maibao.tech.mq.outbox.repository.OutboxRepository;
 
 /** 验证多实例下的租约抢占：只有 claim 返回 1 的实例才发送。 */
 @ExtendWith(MockitoExtension.class)

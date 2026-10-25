@@ -1,7 +1,7 @@
 package com.maibao.tech.mq;
 
 import com.maibao.tech.mq.repository.FailedTaskRepository;
-import com.maibao.tech.mq.repository.OutboxRepository;
+import com.maibao.tech.mq.outbox.repository.OutboxRepository;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
 import com.maibao.tech.adapter.domain.ProviderError;
 import com.maibao.tech.adapter.domain.ProviderException;
 import com.maibao.tech.common.BizException;
-import com.maibao.tech.mq.domain.OutboxMessage;
+import com.maibao.tech.mq.outbox.domain.OutboxMessage;
 
 import com.rabbitmq.client.Channel;
 
