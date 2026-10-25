@@ -18,11 +18,11 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 | 循环节点（循环变量 / 终止条件 / 轮次上限） | `workflow/LoopNode.java` |
 | SSE 流式链路（真流式 + 帧解析 + 心跳 + seq + 取消） | `chat/stream/` — `OpenAiSseDecoder`、`SseStreamSession` |
 | RabbitMQ 可靠性（confirm / returns / DLX / 重试 / 幂等 / outbox，**备用**） | `mq/outbox/` — `OutboxPublisher`、`OutboxService` |
-| 成本记账（Redis 累加 + 明细批量 + 用户配额） | `usage/` — `CostRedisStore`、`DetailBuffer`、`CostFlushJob`、`CostQuotaService` |
+| 成本记账（Redis 累加 + 明细经 MQ 批量落库 + 用户配额） | `usage/redis/`、`usage/detail/`、`usage/job/`、`CostQuotaService` |
 | 多线程与锁（状态抢占、乐观锁、卡死回收） | `publish/` — `PublishRepository.claim`、`PublishExecutor` |
 | 密钥加密（密文入库 + 归属校验） | `security/` — `AesGcmCipher`、`KeyVaultService` |
 | 构建与发布（分层缓存 + 多阶段） | `Dockerfile`、`deploy/nginx.conf`、`.github/workflows/ci.yml` |
-| 用量查询（明细翻页 + 按天聚合报表） | `usage/` — `UsageService`、`CostQuotaService`；`usage/util/` — 计价、Redis 累加、明细缓冲、配置与配额异常 |
+| 用量查询（明细翻页 + 按天聚合报表） | `usage/` — `UsageService`、`CostQuotaService`、`CostCalculator`、`TokenEstimator` |
 
 每个技术点的设计取舍见 [`docs/01-设计取舍.md`](docs/01-设计取舍.md)。
 
@@ -87,7 +87,7 @@ Agent 场景下**一次用户操作会打出上百次模型调用**，对话 QPS
 
 1. `UsageService.record` 里**明细只入本地队列**（`DetailBuffer`），成本只打一次 Redis pipeline —— 对话线程**零 DB 往返**；
 2. Redis 按天分桶两个 Hash：`maibao:cost:acc:{date}` 存 `userId|model|cost|pt|ct|cnt`，`maibao:cost:user:{date}` 存该用户当日已用（给配额校验 O(1) 读）；金额用 `long × 1e8` 存整数，避免浮点漂移；
-3. `DetailBuffer` 每 200ms 用 `JdbcTemplate.batchUpdate` 批量落 `user_query_log`（JPA + `IDENTITY` 主键会关掉 JDBC 批量，`saveAll` 实际是逐条插）；队列满时**丢弃并计数**，绝不阻塞对话；
+3. `DetailBuffer` 每 200ms 攒一批：`mode=mq` 时把整批封成**一条消息**发到 `maibao.detail.exchange`，`DetailConsumer` 批量 `INSERT IGNORE` 落 `user_query_log`；`mode=local` 时直接批量写库。**发送失败立即回落本地直写**，所以 broker 抖动只影响延迟、不丢数据。请求线程只入队，队列满时丢弃并计数，绝不阻塞对话；
 4. `CostFlushJob` 每分钟 `HGETALL` → **覆盖写** `cost_accounting`：`ON DUPLICATE KEY UPDATE cost_amount = VALUES(cost_amount)`。Redis 里存的就是"当日累计"，落盘只是同步，**重跑任意多次结果一致 → 幂等不需要去重表**；
 5. 每天 00:05 日结：最后落盘 → 删当日 Redis key → 清理 7 天前明细。
 
@@ -101,14 +101,21 @@ app:
     redis: { key-prefix: maibao:cost, ttl-days: 3 }
     flush-ms: 60000            # 落盘间隔
     settle-cron: "0 5 0 * * *"
-    detail: { batch-size: 2000, queue-capacity: 20000, retain-days: 7 }
+    detail:
+      mode: mq                 # mq: 走消息队列；local: 本地直写
+      flush-ms: 200            # 攒批间隔
+      batch-size: 2000
+      queue-capacity: 20000
+      max-retries: 3           # 消费失败重投上限，耗尽进 DLQ
 ```
 
 > **为什么成本不走 MQ**：一条消息一次累加是"不可合并"的做法，而成本累加天然可合并（`+= sum`）。1000 QPS 下 outbox 逐条投递要 6 次 DB 写/条（约 6000 写/秒），Redis 只要一次 O(1) 内存操作。**可合并的计数走 Redis，必须逐条持久化、要跨系统的才走 MQ。**
 >
 > **outbox 保留但默认关闭**（`app.mq.outbox-enabled=false`）：代码已收进 `mq/outbox/`，等出现"必须强投递"的消息（通知、扣费、跨系统事件）再启用。任务链路同理：`/api/task/submit` 已删除，`TaskConsumer/TaskProcessor` 由 `app.task.enabled=false` 关闭，表和队列资产保留。
 
-指标：`cost.reconcile.lag`、`mq.publish.confirm`、`mq.publish.returned`（`GET /actuator/metrics/{name}`）。
+**明细为什么走 MQ**：明细是「必须有、但不必马上有」的数据。直接 `save` 时请求线程要等 DB，DB 一抖就变成「对话失败」（其实模型已经成功）；本地缓冲能躲开 DB，但进程被 `kill -9` 会丢最后一批。走 MQ 之后：消息持久化（不丢）+ 消费失败重投（可恢复）+ 耗尽进 DLQ（可重放），代价是多一跳和约 200ms 的延迟。
+
+指标：`cost.reconcile.lag`、`mq.detail.consume.success`、`mq.detail.consume.retry`、`mq.detail.consume.failed`、`mq.publish.confirm`、`mq.publish.returned`（`GET /actuator/metrics/{name}`）。
 
 ### 数据库（MySQL 8）
 
@@ -219,7 +226,12 @@ src/main/java/com/maibao/tech/
 ├── mq/           RabbitMQ 可靠性 + outbox（outbox/ 独立成包，默认关闭）
 ├── publish/      发布状态机、执行器、乐观锁抢占与超时回收
 ├── security/     AES-GCM 加密、密钥归属校验
-├── usage/        对话埋点、Redis 成本累加、明细批量落库、用户配额（工具类在 usage/util/）
+├── usage/        对话埋点、Redis 成本累加、明细经 MQ 批量落库、用户配额
+│   ├── config/   配置（只有数据）
+│   ├── support/  纯工具：键拼装、金额定点换算
+│   ├── redis/    Redis 存取
+│   ├── detail/   明细攒批 / 批量写库 / MQ 消费
+│   └── job/      落盘与对账定时任务
 ├── config/       线程池等基础配置
 └── common/       统一响应、异常处理
 ```
