@@ -1,5 +1,8 @@
 package com.maibao.tech.usage;
 
+import com.maibao.tech.usage.repository.CostAccountingRepository;
+import com.maibao.tech.usage.repository.UserQueryLogRepository;
+
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;

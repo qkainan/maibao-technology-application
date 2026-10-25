@@ -1,4 +1,4 @@
-package com.maibao.tech.publish;
+package com.maibao.tech.publish.repository;
 
 import java.time.Instant;
 import java.util.List;

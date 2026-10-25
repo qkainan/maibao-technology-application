@@ -1,5 +1,7 @@
 package com.maibao.tech.mq;
 
+import com.maibao.tech.mq.repository.OutboxRepository;
+
 import java.time.Instant;
 import java.util.List;
 

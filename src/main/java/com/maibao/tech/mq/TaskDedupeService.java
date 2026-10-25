@@ -1,5 +1,7 @@
 package com.maibao.tech.mq;
 
+import com.maibao.tech.mq.repository.ProcessedTaskRepository;
+
 import jakarta.persistence.EntityManager;
 
 import org.springframework.stereotype.Service;

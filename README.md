@@ -199,6 +199,16 @@ src/main/java/com/maibao/tech/
 | `usage/domain` | `UserQueryLog`、`CostAccounting`（PO）、`QueryLogView`、`CostView`、`UsageSummaryView`（VO） |
 | `common/domain` | `ApiResponse`（统一响应 VO） |
 
+**数据访问也按模块分开放**：各自的 `repository/` 子包只放 Spring Data 接口，条件更新、唯一约束这类"并发语义"直接写在接口的 `@Query` 上：
+
+```
+usage/repository/UserQueryLogRepository.java
+usage/repository/CostAccountingRepository.java
+mq/repository/{ProcessedTask,FailedTask,Outbox}Repository.java
+publish/repository/PublishRepository.java
+security/repository/ApiKeyRepository.java
+```
+
 ---
 
 ## 测试

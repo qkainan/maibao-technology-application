@@ -1,5 +1,7 @@
 package com.maibao.tech.publish;
 
+import com.maibao.tech.publish.repository.PublishRepository;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;

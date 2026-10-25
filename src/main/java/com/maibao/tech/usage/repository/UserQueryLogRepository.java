@@ -1,4 +1,4 @@
-package com.maibao.tech.usage;
+package com.maibao.tech.usage.repository;
 
 import java.util.List;
 

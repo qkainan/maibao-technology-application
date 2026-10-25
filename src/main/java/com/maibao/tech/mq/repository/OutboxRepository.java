@@ -1,4 +1,4 @@
-package com.maibao.tech.mq;
+package com.maibao.tech.mq.repository;
 
 import java.time.Instant;
 import java.util.List;

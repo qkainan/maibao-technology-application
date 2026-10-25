@@ -1,5 +1,8 @@
 package com.maibao.tech.mq;
 
+import com.maibao.tech.mq.repository.FailedTaskRepository;
+import com.maibao.tech.mq.repository.OutboxRepository;
+
 import java.io.IOException;
 import java.time.Instant;
 

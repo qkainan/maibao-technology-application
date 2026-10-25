@@ -1,4 +1,4 @@
-package com.maibao.tech.security;
+package com.maibao.tech.security.repository;
 
 import java.util.List;
 

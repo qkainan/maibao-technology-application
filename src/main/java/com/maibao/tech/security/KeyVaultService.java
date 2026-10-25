@@ -1,5 +1,7 @@
 package com.maibao.tech.security;
 
+import com.maibao.tech.security.repository.ApiKeyRepository;
+
 import java.util.List;
 import java.util.Map;
 

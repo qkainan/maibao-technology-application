@@ -1,5 +1,8 @@
 package com.maibao.tech.mq;
 
+import com.maibao.tech.mq.repository.FailedTaskRepository;
+import com.maibao.tech.mq.repository.OutboxRepository;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
