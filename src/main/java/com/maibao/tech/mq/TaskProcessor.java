@@ -2,36 +2,65 @@ package com.maibao.tech.mq;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import com.maibao.tech.mq.domain.ProcessedTask;
+
+import com.maibao.tech.chat.ChatService;
 import com.maibao.tech.mq.domain.TaskMessage;
 
 /**
- * 任务的幂等落库 + 业务动作。
+ * 异步任务的真实业务动作：调一次模型对话，并记录用量与成本。
  *
- * <p>两件事必须在同一个事务里：先写去重记录、再干活。如果业务抛异常，
- * 去重记录随事务一起回滚 —— 否则重试时会被误判成「重复消息」而直接跳过，
- * 任务就悄悄丢了。</p>
+ * <p>幂等锚点先提交（挡住重复投递），再调外部模型；失败时撤销锚点并抛出，
+ * 让消费者按重试策略处理。这样数据库事务不会跨越网络调用。</p>
  *
- * <p>并发下同一 taskId 的两个消费者只有一个能提交，另一个会撞唯一约束，
- * 由调用方捕获 {@link org.springframework.dao.DataIntegrityViolationException}。</p>
+ * <p>成本由 {@link ChatService} 统一记账（source=ASYNC），所以异步任务也会出现在
+ * 用量与成本统计里。</p>
  */
 @Service
 public class TaskProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(TaskProcessor.class);
 
-    private final ProcessedTaskRepository repository;
+    private final TaskDedupeService dedupe;
+    private final ChatService chatService;
+    private final String defaultModel;
+    private final String defaultUserId;
 
-    public TaskProcessor(ProcessedTaskRepository repository) {
-        this.repository = repository;
+    public TaskProcessor(TaskDedupeService dedupe,
+                         ChatService chatService,
+                         @Value("${app.task.model:mock:echo}") String defaultModel,
+                         @Value("${app.task.user-id:async-task}") String defaultUserId) {
+        this.dedupe = dedupe;
+        this.chatService = chatService;
+        this.defaultModel = defaultModel;
+        this.defaultUserId = defaultUserId;
     }
 
-    @Transactional
     public void process(TaskMessage message) {
-        repository.save(new ProcessedTask(message.taskId()));
-        // 真实业务动作的位置；本项目只记录一条日志
-        log.info("[mq] handle task {} payload={}", message.taskId(), message.payload());
+        dedupe.markProcessed(message.taskId());
+        String model = blankToDefault(message.model(), defaultModel);
+        String userId = blankToDefault(message.userId(), defaultUserId);
+        try {
+            String reply = chatService.chat(userId, "", model, message.payload(), "ASYNC");
+            log.info("[mq] task {} done: model={} user={} replyLen={}",
+                    message.taskId(), model, userId, reply.length());
+        } catch (RuntimeException e) {
+            unmarkQuietly(message.taskId());
+            throw e;
+        }
+    }
+
+    private void unmarkQuietly(String taskId) {
+        try {
+            dedupe.unmark(taskId);
+        } catch (RuntimeException e) {
+            // 撤销失败意味着重试会被当成重复消息跳过，必须留下明确日志
+            log.error("failed to unmark processed task {}, retry may be skipped: {}", taskId, e.toString());
+        }
+    }
+
+    private String blankToDefault(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 }

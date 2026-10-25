@@ -50,7 +50,7 @@ mvn spring-boot:run
 | GET | `/api/chat/stream?prompt=...` | **SSE 流式**（浏览器直接打开看） |
 | POST | `/api/workflow/run` | 跑一个「LLM 节点 + 循环 3 轮」的工作流 |
 | POST | `/api/workflow/validate` | 图校验：传邻接表，返回环上的边 |
-| POST | `/api/task/submit?payload=...` | 提交异步任务（投递到 RabbitMQ，返回 taskId） |
+| POST | `/api/task/submit?payload=...&model=mock:echo&userId=u1` | 提交异步任务（写 outbox，消费者调模型并记成本） |
 | POST | `/api/publish?nodeId=n1&delaySeconds=10` | 建定时发布记录；到点后自动抢占并执行 |
 | POST | `/api/publish/{id}/finish?success=true` | 手动收尾；返回 `false` 表示记录已不在 `PUBLISHING` |
 | POST | `/api/publish/{id}/race?threads=20` | **并发验证**：20 线程抢一条，应返回 1 |
@@ -87,9 +87,10 @@ mvn spring-boot:run
 
 1. `POST /api/task/submit` → 写 `mq_outbox`（`PENDING`），返回 taskId；
 2. 投递器每 2s 扫 `PENDING` → 发送 → confirm `ack` 才标 `SENT`；
-3. 消费成功后回执 `CONSUMED`；
-4. 失败带 `x-retry-count` 重投（最多 3 次），耗尽写 `failed_task` 并 nack → 进死信队列 `maibao.task.dlq`；
-5. 对账任务每分钟跑：`SENT` 超过 5 分钟没有回执的重新投递，重试次数用尽的标 `FAILED`。
+3. 消费者真的调一次模型（`model` 默认 `mock:echo`，可在提交时指定）并写用量/成本，`source=ASYNC`；
+4. 消费成功后回执 `CONSUMED`；
+5. 失败带 `x-retry-count` 重投（最多 3 次）；鉴权失败、内容过滤、参数错误不重试，直接写 `failed_task` 并 nack → 进死信队列 `maibao.task.dlq`；
+6. 对账任务每分钟跑：`SENT` 超过 5 分钟没有回执的重新投递，重试次数用尽的标 `FAILED`。
 
 指标：`mq.publish.confirm`、`mq.publish.returned`、`mq.consume.success`、`mq.consume.duplicate`、`mq.consume.retry`、`mq.consume.failed`（`GET /actuator/metrics/{name}`）。
 

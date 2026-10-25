@@ -21,6 +21,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import com.rabbitmq.client.Channel;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.maibao.tech.adapter.domain.ProviderError;
+import com.maibao.tech.adapter.domain.ProviderException;
 import com.maibao.tech.mq.domain.FailedTask;
 import com.maibao.tech.mq.domain.TaskMessage;
 
@@ -89,10 +91,21 @@ class TaskConsumerTest {
         verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(), any(MessagePostProcessor.class));
     }
 
+    @Test
+    void should_not_retry_auth_errors() throws Exception {
+        willThrow(new ProviderException(ProviderError.AUTH, "invalid key"))
+                .given(processor).process(any(TaskMessage.class));
+
+        consumer.onMessage(task(), rawMessage(0), channel);
+
+        verify(failedTaskRepository).save(any(FailedTask.class));
+        verify(channel).basicNack(DELIVERY_TAG, false, false);
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(), any(MessagePostProcessor.class));
+    }
+
     private TaskMessage task() {
         return TaskMessage.of("t1", "payload");
     }
-
     private Message rawMessage(int attempt) {
         MessageProperties properties = new MessageProperties();
         properties.setDeliveryTag(DELIVERY_TAG);

@@ -1,5 +1,5 @@
 @startuml mq-sequence
-title MQ 链路：outbox → confirm → 消费 → 重试 / 死信 / 对账
+title MQ 链路：outbox → confirm → 消费（真调模型 + 记成本）→ 重试 / 死信 / 对账
 skinparam defaultFontName "Microsoft YaHei"
 skinparam shadowing false
 skinparam sequenceMessageAlign left
@@ -15,10 +15,13 @@ participant "RabbitTemplate" as RT
 queue "exchange / queue\n(配 DLX → DLQ)" as MQ
 participant "TaskConsumer" as CS
 participant "TaskProcessor" as TP
+participant "ChatService" as CHAT
+participant "Adapter" as AD
 database "processed_task\nfailed_task" as DB
+database "user_query_log\ncost_accounting" as USAGE
 
 == 生产端：先落库，再投递 ==
-客户端 -> TC : POST /api/task/submit
+客户端 -> TC : POST /api/task/submit\npayload & model & userId
 TC -> OS : enqueue(TaskMessage)
 OS -> OB : INSERT status=PENDING\n(message_id 唯一键)
 OS --> TC : taskId
@@ -35,25 +38,31 @@ else nack
 end
 RT -> OB : returns 未路由 → status=FAILED + 告警
 
-== 消费端：幂等在前，业务在后 ==
+== 消费端：幂等锚点先提交，业务在事务外 ==
 MQ -> CS : deliver（手动 ack）
 CS -> CS : attempt = header[x-retry-count] 或 0
-CS -> TP : process(message) @Transactional
-TP -> DB : INSERT processed_task(task_id)\n唯一约束
+CS -> TP : process(message)
+TP -> DB : INSERT processed_task\n（REQUIRES_NEW，先提交）
+TP -> CHAT : chat(model, payload, ASYNC)
+CHAT -> AD : adapter.chat(...)
+AD --> CHAT : reply
+CHAT -> USAGE : user_query_log + cost_accounting
+
 alt 处理成功
-  TP --> CS : commit
+  CHAT --> TP : reply
   CS -> MQ : basicAck
   CS -> OB : status=CONSUMED（消费回执）
-else 唯一约束冲突
+else 唯一约束冲突（重复投递）
   DB --> TP : DataIntegrityViolationException
   CS -> MQ : basicAck（跳过）
   CS -> OB : status=CONSUMED
 else 业务异常
-  alt attempt < max-retries
+  TP -> DB : DELETE processed_task（撤销锚点）
+  alt 可重试 且 attempt < max-retries
     CS -> RT : 重投（x-retry-count = attempt+1）
     RT -> MQ : publish
     CS -> MQ : basicAck（原消息）
-  else attempt >= max-retries
+  else 不可重试（AUTH/FILTERED/参数错）或次数用尽
     CS -> DB : INSERT failed_task
     CS -> MQ : basicNack(requeue=false)
     MQ -> MQ : DLX 路由到 DLQ

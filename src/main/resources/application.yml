@@ -54,6 +54,11 @@ management:
         include: health,info,metrics
 
 app:
+  # 异步任务消费者使用的默认模型与用户标识（消息里没带时使用）
+  task:
+    model: mock:echo
+    user-id: async-task
+
   mq:
     exchange: maibao.task.exchange
     queue: maibao.task.queue

@@ -13,6 +13,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
+import com.maibao.tech.adapter.domain.ProviderError;
+import com.maibao.tech.adapter.domain.ProviderException;
+import com.maibao.tech.common.BizException;
 import com.maibao.tech.mq.domain.OutboxMessage;
 
 import com.rabbitmq.client.Channel;
@@ -95,7 +98,7 @@ public class TaskConsumer {
 
     private void handleFailure(TaskMessage message, Channel channel, long tag,
                                int attempt, Exception e) throws IOException {
-        if (attempt < maxRetries) {
+        if (retryable(e) && attempt < maxRetries) {
             republish(message, attempt + 1);
             channel.basicAck(tag, false);
             meterRegistry.counter("mq.consume.retry").increment();
@@ -106,8 +109,27 @@ public class TaskConsumer {
         failedTaskRepository.save(new FailedTask(message.taskId(), message.payload(), e.toString(), attempt + 1));
         channel.basicNack(tag, false, false);
         meterRegistry.counter("mq.consume.failed").increment();
-        log.error("consume failed after {} attempts, recorded to failed_task: {}",
-                attempt + 1, message.taskId(), e);
+        if (!retryable(e)) {
+            log.error("non-retryable error, straight to failed_task: {} - {}", message.taskId(), e.toString());
+        } else {
+            log.error("consume failed after {} attempts, recorded to failed_task: {}",
+                    attempt + 1, message.taskId(), e);
+        }
+    }
+
+    /**
+     * 哪些错误值得重试：鉴权失败、内容过滤、业务参数错误重试多少次都一样，直接放弃；
+     * 限流、超时、上游 5xx 才值得退避重投。
+     */
+    private boolean retryable(Exception e) {
+        if (e instanceof BizException) {
+            return false;
+        }
+        if (e instanceof ProviderException providerException) {
+            return providerException.error() != ProviderError.AUTH
+                    && providerException.error() != ProviderError.FILTERED;
+        }
+        return true;
     }
 
     private void republish(TaskMessage message, int attempt) {

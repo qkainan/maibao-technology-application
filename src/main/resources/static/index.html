@@ -257,12 +257,16 @@
   <section class="panel" data-panel="task">
     <div class="card">
       <h2>提交异步任务</h2>
-      <p class="hint"><span class="verb post">POST</span><code>/api/task/submit</code> — 投递到 RabbitMQ，由消费者手动 ack；投递失败时接口直接报错，不做同步降级。</p>
+      <p class="hint"><span class="verb post">POST</span><code>/api/task/submit</code> — 先写 outbox 再投递；消费者会真的调一次模型并记成本（source=ASYNC）。</p>
       <div class="row">
         <label class="grow">payload<textarea id="task-payload" rows="2">hello from console</textarea></label>
       </div>
       <div class="row">
         <label class="grow">taskId（可空，用于测幂等）<input id="task-id" placeholder="留空则自动生成 UUID"></label>
+      </div>
+      <div class="row">
+        <label class="grow">model（可空，默认 mock:echo）<input id="task-model" placeholder="mock:echo"></label>
+        <label class="grow">userId（可空，默认 async-task）<input id="task-user" placeholder="async-task"></label>
       </div>
       <div class="actions">
         <button class="btn primary" id="task-run">提交</button>
@@ -639,14 +643,19 @@
   /* ---------- 异步任务 ---------- */
   async function submitTask(outId, id) {
     return request('POST', '/api/task/submit', {
-      query: { payload: $('task-payload').value, taskId: id }
+      query: {
+        payload: $('task-payload').value,
+        taskId: id,
+        model: $('task-model').value.trim(),
+        userId: $('task-user').value.trim()
+      }
     });
   }
 
   $('task-run').addEventListener('click', function () {
     run('task-out', async function () {
       const res = await submitTask('task-out', $('task-id').value.trim());
-      paint('task-out', res, '返回 taskId；消费结果看服务端日志或队列指标');
+      paint('task-out', res, '返回 taskId；消费结果看「用量与成本」或服务端日志');
     });
   });
 

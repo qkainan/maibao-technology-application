@@ -35,20 +35,25 @@ public class ChatService {
     }
 
     public String chat(String userId, String appKeyRef, String model, String prompt) {
+        return chat(userId, appKeyRef, model, prompt, SOURCE_SYNC);
+    }
+
+    /** source 用于区分调用入口：SYNC / ASYNC（MQ 消费者） */
+    public String chat(String userId, String appKeyRef, String model, String prompt, String source) {
         AiProviderAdapter adapter = registry.resolve(model);
         ChatRequest request = new ChatRequest(model, List.of(ChatMessage.user(prompt)), 0.7);
         long start = System.currentTimeMillis();
         try {
             String reply = adapter.chat(appKeyRef, request);
-            usageService.record(userId, model, SOURCE_SYNC, prompt, reply,
+            usageService.record(userId, model, source, prompt, reply,
                     System.currentTimeMillis() - start, "SUCCESS", null);
             return reply;
         } catch (ProviderException e) {
-            usageService.record(userId, model, SOURCE_SYNC, prompt, null,
+            usageService.record(userId, model, source, prompt, null,
                     System.currentTimeMillis() - start, "FAILED", e.getMessage());
             throw e;
         } catch (RuntimeException e) {
-            usageService.record(userId, model, SOURCE_SYNC, prompt, null,
+            usageService.record(userId, model, source, prompt, null,
                     System.currentTimeMillis() - start, "FAILED", e.getMessage());
             throw e;
         }
