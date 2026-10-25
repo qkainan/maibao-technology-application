@@ -1,4 +1,4 @@
-package com.maibao.tech.usage.job;
+package com.maibao.tech.usage;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -12,8 +12,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import com.maibao.tech.usage.config.CostProperties;
-import com.maibao.tech.usage.redis.CostRedisRepository;
 
 import io.micrometer.core.instrument.MeterRegistry;
 

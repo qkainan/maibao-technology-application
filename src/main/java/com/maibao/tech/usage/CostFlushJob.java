@@ -1,4 +1,4 @@
-package com.maibao.tech.usage.job;
+package com.maibao.tech.usage;
 
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -15,10 +15,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import com.maibao.tech.usage.config.CostProperties;
-import com.maibao.tech.usage.redis.CostAggregate;
-import com.maibao.tech.usage.redis.CostRedisRepository;
-import com.maibao.tech.usage.support.Amounts;
 
 /**
  * 成本落盘：把 Redis 的当日累计<b>覆盖写</b>到 {@code cost_accounting}。
@@ -77,8 +73,8 @@ public class CostFlushJob {
         Date statDate = Date.valueOf(day);
         List<Object[]> args = new ArrayList<>(snapshot.size());
         for (CostAggregate agg : snapshot) {
-            long totalTokens = agg.promptTokens() + agg.completionTokens();
-            BigDecimal cost = Amounts.toYuan(agg.costScaled());
+            long totalTokens = agg.totalTokens();
+            BigDecimal cost = agg.costYuan();
             args.add(new Object[]{
                     agg.userId(), agg.model(), statDate, agg.count(),
                     agg.promptTokens(), agg.completionTokens(), totalTokens,

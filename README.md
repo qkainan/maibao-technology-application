@@ -18,7 +18,7 @@ AI 应用平台的骨架高度相似：一次对话要穿过适配层与流式�
 | 循环节点（循环变量 / 终止条件 / 轮次上限） | `workflow/LoopNode.java` |
 | SSE 流式链路（真流式 + 帧解析 + 心跳 + seq + 取消） | `chat/stream/` — `OpenAiSseDecoder`、`SseStreamSession` |
 | RabbitMQ 可靠性（confirm / returns / DLX / 重试 / 幂等 / outbox，**备用**） | `mq/outbox/` — `OutboxPublisher`、`OutboxService` |
-| 成本记账（Redis 累加 + 明细经 MQ 批量落库 + 用户配额） | `usage/redis/`、`usage/detail/`、`usage/job/`、`CostQuotaService` |
+| 成本记账（Redis 累加 + 明细经 MQ 批量落库 + 用户配额） | `usage/` 根目录 + `usage/detail/` |
 | 多线程与锁（状态抢占、乐观锁、卡死回收） | `publish/` — `PublishRepository.claim`、`PublishExecutor` |
 | 密钥加密（密文入库 + 归属校验） | `security/` — `AesGcmCipher`、`KeyVaultService` |
 | 构建与发布（分层缓存 + 多阶段） | `Dockerfile`、`deploy/nginx.conf`、`.github/workflows/ci.yml` |
@@ -226,15 +226,28 @@ src/main/java/com/maibao/tech/
 ├── mq/           RabbitMQ 可靠性 + outbox（outbox/ 独立成包，默认关闭）
 ├── publish/      发布状态机、执行器、乐观锁抢占与超时回收
 ├── security/     AES-GCM 加密、密钥归属校验
-├── usage/        对话埋点、Redis 成本累加、明细经 MQ 批量落库、用户配额
-│   ├── config/   配置（只有数据）
-│   ├── support/  纯工具：键拼装、金额定点换算
-│   ├── redis/    Redis 存取
-│   ├── detail/   明细攒批 / 批量写库 / MQ 消费
-│   └── job/      落盘与对账定时任务
+├── usage/        对话埋点、成本记账（Redis 累加 + 明细 MQ）、用户配额
+│   └── detail/   明细：攒批 / 批量写库 / MQ 消费
 ├── config/       线程池等基础配置
 └── common/       统一响应、异常处理
 ```
+
+**`usage/` 怎么读**（按这个顺序看，不需要每个文件都打开）：
+
+| # | 文件 | 看什么 |
+|---|---|---|
+| 1 | `usage/UsageService` | 入口。`record()` 十几行就是全貌：明细入队 + 成本写 Redis |
+| 2 | `usage/CostProperties` | 有哪些配置：配额、Redis 键前缀、明细批量、价表 |
+| 3 | `usage/CostKeys` | Redis 键长什么样（`acc` / `user` 两个按天 Hash） |
+| 4 | `usage/CostRedisRepository` | 高频写怎么落 Redis：一次 pipeline、聚合快照、日结删键 |
+| 5 | `usage/CostFlushJob` | Redis 怎么变成 DB 行：每分钟**覆盖写** + 每日日结 |
+| 6 | `usage/CostReconcileJob` | 账对不对：Redis 累计 vs DB 聚合 |
+| 7 | `usage/detail/DetailBuffer` → `DetailConsumer` → `DetailWriter` | 明细怎么落库：攒批 → MQ → 批量 `INSERT IGNORE` |
+| 8 | `usage/CostQuotaService` | 调用前拦截（业务码 4029） |
+| 9 | `usage/CostCalculator`、`TokenEstimator` | 怎么算钱（有单测） |
+| — | `usage/domain`、`usage/repository` | 表实体与 Spring Data 接口 |
+
+> 目录组织原则：**子包按"内聚"分，不按"层"分**。`detail/` 有 5 个类、彼此只服务于明细落库，所以独立成包；配置、Redis、定时任务各只有 1–2 个类，压回根目录反而更好找。
 
 **DTO / VO / PO 按模块分开放**，各自的 `domain/` 子包里只有数据载体，逻辑仍在模块根包：
 

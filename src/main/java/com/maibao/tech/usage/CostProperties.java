@@ -1,4 +1,4 @@
-package com.maibao.tech.usage.config;
+package com.maibao.tech.usage;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

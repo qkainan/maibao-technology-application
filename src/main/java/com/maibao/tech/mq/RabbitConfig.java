@@ -1,7 +1,7 @@
 package com.maibao.tech.mq;
 
 import com.maibao.tech.mq.outbox.repository.OutboxRepository;
-import com.maibao.tech.usage.config.CostProperties;
+import com.maibao.tech.usage.CostProperties;
 
 import java.time.Instant;
 

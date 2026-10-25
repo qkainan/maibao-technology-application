@@ -1,4 +1,4 @@
-package com.maibao.tech.usage.support;
+package com.maibao.tech.usage;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;

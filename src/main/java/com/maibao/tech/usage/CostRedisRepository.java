@@ -1,4 +1,4 @@
-package com.maibao.tech.usage.redis;
+package com.maibao.tech.usage;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -13,9 +13,6 @@ import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
-import com.maibao.tech.usage.config.CostProperties;
-import com.maibao.tech.usage.support.Amounts;
-import com.maibao.tech.usage.support.CostKeys;
 
 /**
  * 成本在 Redis 里的存取。
@@ -50,7 +47,7 @@ public class CostRedisRepository {
                          int promptTokens, int completionTokens, BigDecimal cost) {
         String accKey = keys.acc(day);
         String userKey = keys.user(day);
-        long costScaled = Amounts.toScaled(cost);
+        long costScaled = toScaled(cost);
 
         redis.executePipelined(new SessionCallback<Object>() {
             @Override
@@ -71,7 +68,7 @@ public class CostRedisRepository {
     /** 某用户当天已用金额（元）。配额校验读这个，O(1)。 */
     public BigDecimal userCost(String userId, LocalDate day) {
         Object value = redis.opsForHash().get(keys.user(day), userId);
-        return Amounts.toYuan(value == null ? 0L : parseLong(value));
+        return BigDecimal.valueOf(value == null ? 0L : parseLong(value), CostAggregate.SCALE);
     }
 
     /** 当天全量快照，已按 {@code userId|model} 聚合好，落盘直接用。 */
@@ -101,12 +98,20 @@ public class CostRedisRepository {
         for (CostAggregate agg : aggregate(day)) {
             sum += agg.costScaled();
         }
-        return Amounts.toYuan(sum);
+        return BigDecimal.valueOf(sum, CostAggregate.SCALE);
     }
 
     /** 日结：整组键删掉，不用 SCAN。 */
     public void deleteDay(LocalDate day) {
         redis.delete(List.of(keys.acc(day), keys.user(day)));
+    }
+
+    private static long toScaled(BigDecimal yuan) {
+        if (yuan == null) {
+            return 0L;
+        }
+        return yuan.multiply(BigDecimal.TEN.pow(CostAggregate.SCALE))
+                .setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
     }
 
     private static long parseLong(Object value) {

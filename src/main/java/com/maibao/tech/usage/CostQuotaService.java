@@ -8,9 +8,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.maibao.tech.usage.config.CostProperties;
+import com.maibao.tech.usage.CostProperties;
 import com.maibao.tech.usage.domain.QuotaView;
-import com.maibao.tech.usage.redis.CostRedisRepository;
+import com.maibao.tech.usage.CostRedisRepository;
 
 /**
  * 用户配额：调用模型<b>之前</b>校验，超限直接拒绝，不产生任何模型调用与费用。

@@ -13,7 +13,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
-import com.maibao.tech.usage.config.CostProperties;
+import com.maibao.tech.usage.CostProperties;
 import com.maibao.tech.usage.detail.DetailBuffer;
 import com.maibao.tech.usage.detail.DetailRecord;
 import com.maibao.tech.usage.domain.CostAccounting;
@@ -21,7 +21,7 @@ import com.maibao.tech.usage.domain.CostView;
 import com.maibao.tech.usage.domain.QueryLogView;
 import com.maibao.tech.usage.domain.UsageSummaryView;
 import com.maibao.tech.usage.domain.UserQueryLog;
-import com.maibao.tech.usage.redis.CostRedisRepository;
+import com.maibao.tech.usage.CostRedisRepository;
 import com.maibao.tech.usage.repository.CostAccountingRepository;
 import com.maibao.tech.usage.repository.UserQueryLogRepository;
 
