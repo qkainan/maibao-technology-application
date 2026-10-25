@@ -1,44 +1,20 @@
 package com.maibao.tech.usage.repository;
 
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.LocalDate;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.maibao.tech.usage.domain.po.CostAccounting;
 
+/**
+ * 成本聚合表的只读访问。
+ *
+ * <p><b>这里没有写方法，是有意的</b>：累加走 Redis（{@code CostRedisRepository.increase}），
+ * 落库走 {@code CostFlushJob} 里的 {@code INSERT ... ON DUPLICATE KEY UPDATE} 覆盖写。
+ * 早期的 {@code accumulate}（{@code UPDATE ... += ?}）和 {@code sumByStatDate}
+ * 在改成覆盖写之后已无调用方，删除。</p>
+ */
 public interface CostAccountingRepository extends JpaRepository<CostAccounting, Long> {
 
     List<CostAccounting> findByUserIdOrderByStatDateDescModelAsc(String userId);
-
-    /**
-     * 原子累加：并发下不会丢计数，也不需要在应用层加锁。
-     *
-     * @return 0 表示这一行还不存在，由调用方决定是否插入
-     */
-    @Modifying
-    @Transactional
-    @Query("update CostAccounting c set c.requestCount = c.requestCount + 1, "
-            + "c.promptTokens = c.promptTokens + :pt, c.completionTokens = c.completionTokens + :ct, "
-            + "c.totalTokens = c.totalTokens + :tt, c.costAmount = c.costAmount + :cost, "
-            + "c.updatedAt = :now "
-            + "where c.userId = :uid and c.model = :model and c.statDate = :date")
-    int accumulate(@Param("uid") String userId,
-                   @Param("model") String model,
-                   @Param("date") LocalDate date,
-                   @Param("pt") long promptTokens,
-                   @Param("ct") long completionTokens,
-                   @Param("tt") long totalTokens,
-                   @Param("cost") BigDecimal cost,
-                   @Param("now") Instant now);
-
-    /** 某账期的聚合成本合计，用于和明细对账 */
-    @Query("select coalesce(sum(c.costAmount), 0) from CostAccounting c where c.statDate = :date")
-    BigDecimal sumByStatDate(@Param("date") LocalDate date);
 }
