@@ -1,6 +1,8 @@
-package com.maibao.tech.usage;
+package com.maibao.tech.usage.domain.dto;
 
 import java.math.BigDecimal;
+
+import com.maibao.tech.usage.util.Amounts;
 
 /**
  * 一次落盘的单位：某用户、某模型、某天的累计。
@@ -15,11 +17,8 @@ public record CostAggregate(String userId,
                             long completionTokens,
                             long count) {
 
-    /** 金额在 Redis 里保留的小数位数（定点整数，避免浮点漂移） */
-    public static final int SCALE = 8;
-
     public BigDecimal costYuan() {
-        return BigDecimal.valueOf(costScaled, SCALE);
+        return Amounts.toYuan(costScaled);
     }
 
     public long totalTokens() {

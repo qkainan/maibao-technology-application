@@ -9,9 +9,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.maibao.tech.common.domain.ApiResponse;
 import com.maibao.tech.usage.UsageService;
-import com.maibao.tech.usage.domain.CostView;
-import com.maibao.tech.usage.domain.QueryLogView;
-import com.maibao.tech.usage.domain.UsageSummaryView;
+import com.maibao.tech.usage.domain.vo.CostView;
+import com.maibao.tech.usage.domain.vo.QueryLogView;
+import com.maibao.tech.usage.domain.vo.UsageSummaryView;
 
 /** 对话流水与成本报表（模拟业务）。 */
 @RestController

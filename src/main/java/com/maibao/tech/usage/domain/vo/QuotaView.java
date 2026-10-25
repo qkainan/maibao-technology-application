@@ -1,4 +1,4 @@
-package com.maibao.tech.usage.domain;
+package com.maibao.tech.usage.domain.vo;
 
 import java.math.BigDecimal;
 

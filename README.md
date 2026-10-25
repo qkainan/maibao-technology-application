@@ -226,8 +226,13 @@ src/main/java/com/maibao/tech/
 ├── mq/           RabbitMQ 可靠性 + outbox（outbox/ 独立成包，默认关闭）
 ├── publish/      发布状态机、执行器、乐观锁抢占与超时回收
 ├── security/     AES-GCM 加密、密钥归属校验
-├── usage/        对话埋点、成本记账（Redis 累加 + 明细 MQ）、用户配额
-│   └── detail/   明细：攒批 / 批量写库 / MQ 消费
+├── usage/        第一层只放链路节点，其余按角色归到子包
+│   ├── UsageService / CostQuotaService / CostCalculator     入口 / 配额 / 计价
+│   ├── CostRedisRepository / CostFlushJob / CostReconcileJob 累加 / 落盘 / 对账
+│   ├── detail/   DetailBuffer / DetailConsumer / DetailWriter
+│   ├── domain/   po（实体）、vo（视图）、dto（内部传输）
+│   ├── repository/ Spring Data 接口
+│   └── util/     折算 Amounts、键 CostKeys、配置 CostProperties、异常、TokenEstimator
 ├── config/       线程池等基础配置
 └── common/       统一响应、异常处理
 ```
@@ -245,9 +250,9 @@ src/main/java/com/maibao/tech/
 | 7 | `usage/detail/DetailBuffer` → `DetailConsumer` → `DetailWriter` | 明细怎么落库：攒批 → MQ → 批量 `INSERT IGNORE` |
 | 8 | `usage/CostQuotaService` | 调用前拦截（业务码 4029） |
 | 9 | `usage/CostCalculator`、`TokenEstimator` | 怎么算钱（有单测） |
-| — | `usage/domain`、`usage/repository` | 表实体与 Spring Data 接口 |
+| — | `usage/domain/po`、`vo`、`dto` | 实体 / 视图对象 / 内部传输对象 |
 
-> 目录组织原则：**子包按"内聚"分，不按"层"分**。`detail/` 有 5 个类、彼此只服务于明细落库，所以独立成包；配置、Redis、定时任务各只有 1–2 个类，压回根目录反而更好找。
+> 目录组织原则：**第一层只放链路节点**（入口、仓储、定时任务），异常/折算/配置这类支撑类收进 `util`；`domain` 按 PO/VO/DTO 分角色；`detail/` 因为整组只服务「明细落库」而独立成包。
 
 **DTO / VO / PO 按模块分开放**，各自的 `domain/` 子包里只有数据载体，逻辑仍在模块根包：
 
@@ -258,7 +263,9 @@ src/main/java/com/maibao/tech/
 | `mq/outbox/domain` | `OutboxMessage`（PO，outbox 独立包） |
 | `publish/domain` | `PublishRecord`（PO）、`PublishStatus`（枚举） |
 | `security/domain` | `ApiKeyEntity`（PO） |
-| `usage/domain` | `UserQueryLog`、`CostAccounting`（PO）、`QueryLogView`、`CostView`、`UsageSummaryView`、`QuotaView`（VO） |
+| `usage/domain/po` | `UserQueryLog`、`CostAccounting`（PO） |
+| `usage/domain/vo` | `QueryLogView`、`CostView`、`UsageSummaryView`、`QuotaView`（VO） |
+| `usage/domain/dto` | `DetailRecord`、`DetailBatch`（明细消息体）、`CostAggregate`（落盘单位） |
 | `common/domain` | `ApiResponse`（统一响应 VO） |
 
 **数据访问也按模块分开放**：各自的 `repository/` 子包只放 Spring Data 接口，条件更新、唯一约束这类"并发语义"直接写在接口的 `@Query` 上：

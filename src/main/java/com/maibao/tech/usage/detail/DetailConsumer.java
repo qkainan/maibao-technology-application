@@ -16,7 +16,7 @@ import com.rabbitmq.client.Channel;
 
 import com.maibao.tech.mq.domain.FailedTask;
 import com.maibao.tech.mq.repository.FailedTaskRepository;
-import com.maibao.tech.usage.CostProperties;
+import com.maibao.tech.usage.util.CostProperties;
 
 import io.micrometer.core.instrument.MeterRegistry;
 

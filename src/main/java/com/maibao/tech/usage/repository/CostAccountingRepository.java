@@ -11,7 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.maibao.tech.usage.domain.CostAccounting;
+import com.maibao.tech.usage.domain.po.CostAccounting;
 
 public interface CostAccountingRepository extends JpaRepository<CostAccounting, Long> {
 

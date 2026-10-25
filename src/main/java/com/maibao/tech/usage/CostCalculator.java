@@ -6,7 +6,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
-import com.maibao.tech.usage.CostProperties;
+import com.maibao.tech.usage.util.CostProperties;
 
 /**
  * 计价：按 model 的冒号前缀取单价，把 token 折算成金额。

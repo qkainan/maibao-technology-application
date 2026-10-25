@@ -14,7 +14,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import com.maibao.tech.usage.CostProperties;
+import com.maibao.tech.usage.util.CostProperties;
 
 /**
  * 明细的攒批缓冲。

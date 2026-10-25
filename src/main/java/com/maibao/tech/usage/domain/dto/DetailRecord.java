@@ -1,4 +1,4 @@
-package com.maibao.tech.usage.detail;
+package com.maibao.tech.usage.domain.dto;
 
 import java.math.BigDecimal;
 import java.time.Instant;

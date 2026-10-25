@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import com.maibao.tech.usage.domain.UserQueryLog;
+import com.maibao.tech.usage.domain.po.UserQueryLog;
 
 public interface UserQueryLogRepository extends JpaRepository<UserQueryLog, Long> {
 

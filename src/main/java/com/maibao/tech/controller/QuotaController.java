@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.maibao.tech.common.domain.ApiResponse;
 import com.maibao.tech.usage.CostQuotaService;
-import com.maibao.tech.usage.domain.QuotaView;
+import com.maibao.tech.usage.domain.vo.QuotaView;
 
 /** 配额查询：前端展示"今日还剩多少额度"。 */
 @RestController

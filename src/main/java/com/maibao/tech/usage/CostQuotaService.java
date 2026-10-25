@@ -8,8 +8,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.maibao.tech.usage.CostProperties;
-import com.maibao.tech.usage.domain.QuotaView;
+import com.maibao.tech.usage.util.CostProperties;
+import com.maibao.tech.usage.domain.vo.QuotaView;
 import com.maibao.tech.usage.CostRedisRepository;
 
 /**

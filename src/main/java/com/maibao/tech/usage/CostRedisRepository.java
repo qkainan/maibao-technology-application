@@ -8,6 +8,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.maibao.tech.usage.domain.dto.CostAggregate;
+import com.maibao.tech.usage.util.Amounts;
+
 import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -47,7 +50,7 @@ public class CostRedisRepository {
                          int promptTokens, int completionTokens, BigDecimal cost) {
         String accKey = keys.acc(day);
         String userKey = keys.user(day);
-        long costScaled = toScaled(cost);
+        long costScaled = Amounts.toScaled(cost);
 
         redis.executePipelined(new SessionCallback<Object>() {
             @Override
@@ -68,7 +71,7 @@ public class CostRedisRepository {
     /** 某用户当天已用金额（元）。配额校验读这个，O(1)。 */
     public BigDecimal userCost(String userId, LocalDate day) {
         Object value = redis.opsForHash().get(keys.user(day), userId);
-        return BigDecimal.valueOf(value == null ? 0L : parseLong(value), CostAggregate.SCALE);
+        return Amounts.toYuan(value == null ? 0L : parseLong(value));
     }
 
     /** 当天全量快照，已按 {@code userId|model} 聚合好，落盘直接用。 */
@@ -98,20 +101,12 @@ public class CostRedisRepository {
         for (CostAggregate agg : aggregate(day)) {
             sum += agg.costScaled();
         }
-        return BigDecimal.valueOf(sum, CostAggregate.SCALE);
+        return Amounts.toYuan(sum);
     }
 
     /** 日结：整组键删掉，不用 SCAN。 */
     public void deleteDay(LocalDate day) {
         redis.delete(List.of(keys.acc(day), keys.user(day)));
-    }
-
-    private static long toScaled(BigDecimal yuan) {
-        if (yuan == null) {
-            return 0L;
-        }
-        return yuan.multiply(BigDecimal.TEN.pow(CostAggregate.SCALE))
-                .setScale(0, java.math.RoundingMode.HALF_UP).longValueExact();
     }
 
     private static long parseLong(Object value) {
