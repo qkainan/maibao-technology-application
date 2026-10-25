@@ -110,6 +110,7 @@ public class TaskConsumer {
             return;
         }
         failedTaskRepository.save(new FailedTask(message.taskId(), message.payload(), e.toString(), attempt + 1));
+        markOutboxFailed(message, e);
         channel.basicNack(tag, false, false);
         meterRegistry.counter("mq.consume.failed").increment();
         if (!retryable(e)) {
@@ -118,6 +119,25 @@ public class TaskConsumer {
             log.error("consume failed after {} attempts, recorded to failed_task: {}",
                     attempt + 1, message.taskId(), e);
         }
+    }
+
+    /**
+     * 终态失败要同时终结 outbox，否则它会停在 SENT，被对账打回 PENDING 重投，
+     * 造成"同一条消息被反复执行、failed_task 和 DLQ 不断累加"。
+     *
+     * <p>必须写在 nack 之前：先 nack 的话，中间崩溃会留下 SENT 行。</p>
+     */
+    private void markOutboxFailed(TaskMessage message, Exception cause) {
+        try {
+            outboxRepository.markFailedByMessageId(message.taskId(), OutboxMessage.FAILED,
+                    abbreviate("consume failed: " + cause), Instant.now());
+        } catch (RuntimeException e) {
+            log.warn("failed to mark outbox failed for {}: {}", message.taskId(), e.toString());
+        }
+    }
+
+    private String abbreviate(String text) {
+        return text.length() > 255 ? text.substring(0, 255) : text;
     }
 
     /**

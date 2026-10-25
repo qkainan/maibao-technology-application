@@ -262,6 +262,7 @@ mvn test
 | [`docs/01-设计取舍.md`](docs/01-设计取舍.md) | 每个技术点为什么这么设计、常见疑问 |
 | [`docs/02-时序图.md`](docs/02-时序图.md) | 发布链路与 MQ 链路的时序图（PNG + PlantUML 源） |
 | [`docs/03-数据库设计.md`](docs/03-数据库设计.md) | 表结构、索引、计费口径 |
+| [`docs/04-缺陷记录.md`](docs/04-缺陷记录.md) | 已修复的并发/可靠性问题：复现、根因、回归 |
 | [`docs/schema.sql`](docs/schema.sql) | 建表脚本（结构唯一来源） |
 
 ---

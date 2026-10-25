@@ -72,6 +72,7 @@ app:
     # outbox：扫描间隔 / 对账间隔 / 重试上限 / 消费回执超时 / 抢占租约
     outbox-scan-ms: 2000
     outbox-reconcile-ms: 60000
+    outbox-reconcile-initial-delay-ms: 60000
     outbox-max-attempts: 5
     consume-timeout-seconds: 300
     outbox-lease-seconds: 30

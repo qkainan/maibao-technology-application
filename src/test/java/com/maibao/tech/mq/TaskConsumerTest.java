@@ -27,6 +27,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.maibao.tech.adapter.domain.ProviderError;
 import com.maibao.tech.adapter.domain.ProviderException;
 import com.maibao.tech.mq.domain.FailedTask;
+import com.maibao.tech.mq.domain.OutboxMessage;
 import com.maibao.tech.mq.domain.TaskMessage;
 
 @ExtendWith(MockitoExtension.class)
@@ -80,6 +81,8 @@ class TaskConsumerTest {
                 any(MessagePostProcessor.class));
         verify(channel).basicAck(DELIVERY_TAG, false);
         verify(failedTaskRepository, never()).save(any(FailedTask.class));
+        // 还在重投期，不能提前终结 outbox
+        verify(outboxRepository, never()).markFailedByMessageId(anyString(), anyString(), anyString(), any());
     }
 
     @Test
@@ -91,6 +94,7 @@ class TaskConsumerTest {
 
         verify(failedTaskRepository).save(any(FailedTask.class));
         verify(channel).basicNack(DELIVERY_TAG, false, false);
+        verify(outboxRepository).markFailedByMessageId(eq("t1"), eq(OutboxMessage.FAILED), anyString(), any());
         verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(), any(MessagePostProcessor.class));
     }
 
@@ -103,6 +107,7 @@ class TaskConsumerTest {
 
         verify(failedTaskRepository).save(any(FailedTask.class));
         verify(channel).basicNack(DELIVERY_TAG, false, false);
+        verify(outboxRepository).markFailedByMessageId(eq("t1"), eq(OutboxMessage.FAILED), anyString(), any());
         verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(), any(MessagePostProcessor.class));
     }
 

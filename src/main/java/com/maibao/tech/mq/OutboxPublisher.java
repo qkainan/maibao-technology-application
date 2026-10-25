@@ -80,7 +80,8 @@ public class OutboxPublisher {
     }
 
     /** 对账：SENT 但没有消费回执的重新投递；重试次数用尽的标记失败 */
-    @Scheduled(fixedDelayString = "${app.mq.outbox-reconcile-ms:60000}", initialDelay = 60000)
+    @Scheduled(fixedDelayString = "${app.mq.outbox-reconcile-ms:60000}",
+            initialDelayString = "${app.mq.outbox-reconcile-initial-delay-ms:60000}")
     public void reconcile() {
         Instant now = Instant.now();
         int requeued = repository.requeueStale(OutboxMessage.PENDING, OutboxMessage.SENT,

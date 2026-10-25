@@ -71,6 +71,7 @@ else 业务异常
     CS -> MQ : basicAck（原消息）
   else 不可重试（AUTH/FILTERED/参数错）或次数用尽
     CS -> DB : INSERT failed_task
+    CS -> OB : status=FAILED（终态写回）
     CS -> MQ : basicNack(requeue=false)
     MQ -> MQ : DLX 路由到 DLQ
   end
